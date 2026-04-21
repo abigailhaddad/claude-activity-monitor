@@ -53,7 +53,7 @@ gentle_notification_title: "Claude Code: break time"
 gentle_notification_body:  "{mins} min coding. Stand up, look away, drink water."
 
 firm_notification_title: "Claude Code: break overdue"
-firm_notification_body:  "{mins} min coding. Step away for 5 minutes now."
+firm_notification_body:  "{mins} min coding. Step away for {idle_min} min now."
 
 hard_block_notification_title: "Claude Code: PAUSED — take a break"
-hard_block_notification_body:  "{mins} min with no break. Claude Code is paused until idle."
+hard_block_notification_body:  "{mins} min with no break. Claude Code is paused until {idle_min} min idle."
