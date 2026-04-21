@@ -164,12 +164,14 @@ send_notification() {
 }
 
 notify() {
+  # All break-monitor notifications pass urgency=urgent so they pierce
+  # Do Not Disturb / Focus modes. The whole point of this tool is to
+  # tell the user things they would otherwise ignore.
   local mins="$1" tier="$2"
-  local title body urgency="normal"
+  local title body
   title=$(render_template "$(yaml_get "${tier}_notification_title")" "$mins")
   body=$(render_template  "$(yaml_get "${tier}_notification_body")"  "$mins")
-  [[ "$tier" == "hard_block" ]] && urgency="urgent"
-  send_notification "$title" "$body" "$urgency"
+  send_notification "$title" "$body" urgent
 }
 
 write_nudge() {
