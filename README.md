@@ -7,6 +7,8 @@
 
 A break monitor for Claude Code that actually makes you take breaks.
 
+![Claude Code refusing a prompt because you've been coding too long](docs/screenshots/hard_block.jpg)
+
 Tracks how long you've been working at your computer (across every
 Claude Code session and every chat), and escalates from a funny poem to
 a hard block on new prompts until you've actually stepped away.
