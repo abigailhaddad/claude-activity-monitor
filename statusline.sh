@@ -49,15 +49,20 @@ firm=$(yaml_int firm_nudge_minutes)
 hard=$(yaml_int hard_block_minutes)
 idle=$(yaml_int idle_threshold_minutes)
 
-# Source of truth for tier is nudge.txt (what hook.sh acts on). Fall
-# back to streak math only if the nudge file is empty or stale — this
-# prevents the statusline from claiming "FIRM NUDGE" while hook.sh is
-# already blocking prompts based on a freshly-written hard_block.
+# Determine tier. Prefer nudge.txt (source of truth for what hook.sh
+# will do on the next prompt), but fall back to streak math when
+# nudge.txt is empty — it's empty while you're currently idle, but the
+# streak hasn't reset yet, and showing no tier + default countdowns
+# produces nonsense like "nudge in 0m".
 tier=""
 if [[ -s "$NUDGE_FILE" ]]; then
   nudge_age=$(( now - $(mtime "$NUDGE_FILE") ))
-  if (( nudge_age < 180 )); then
-    tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
+  (( nudge_age < 180 )) && tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
+fi
+if [[ -z "$tier" ]]; then
+  if   (( mins >= hard ));   then tier=hard_block
+  elif (( mins >= firm ));   then tier=firm
+  elif (( mins >= gentle )); then tier=gentle
   fi
 fi
 
