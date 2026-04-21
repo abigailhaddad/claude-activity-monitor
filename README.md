@@ -1,13 +1,8 @@
 # claude-activity-monitor
 
-> *Your chair has grown roots, your wrists have gone numb,*  
-> *Your posture resembles a question-mark's thumb.*  
-> *The keyboard knows secrets no spine should be told —*  
-> *Stand up, little goblin. Go out. See the world.*
+![The monitor watched, the monitor waited. The monitor's patience has fully deflated. Two hours of coding, no break in between — now close the laptop. Go touch something green.](docs/screenshots/hard_block.jpg)
 
 A break monitor for Claude Code that actually makes you take breaks.
-
-<img src="docs/screenshots/hard_block.jpg" alt="Claude Code refusing a prompt because you've been coding too long" width="100%">
 
 Tracks how long you've been working at your computer (across every
 Claude Code session and every chat), and escalates from a funny poem to
