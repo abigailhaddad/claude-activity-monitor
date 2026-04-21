@@ -2,11 +2,11 @@
 
 ![The monitor watched, the monitor waited. The monitor's patience has fully deflated. Two hours of coding, no break in between — now close the laptop. Go touch something green.](docs/screenshots/hard_block.jpg)
 
-A break monitor for Claude Code that actually makes you take breaks.
+A break monitor for Claude Code that makes you take breaks.
 
 Tracks how long you've been working at your computer (across every
 Claude Code session and every chat), and escalates from a funny poem to
-a hard block on new prompts until you've actually stepped away.
+a hard block on new prompts until you step away.
 
 - **30 min** — Claude opens its next reply with a short, silly poem
   telling you to stretch.
@@ -23,8 +23,8 @@ whatever you put there.
 
 ## Why
 
-"Take a break" banners that you can dismiss don't work. This one actually
-stops the work until you rest.
+"Take a break" banners that you can dismiss don't work. This one stops
+the work until you rest.
 
 ## Install
 
