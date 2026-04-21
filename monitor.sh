@@ -225,7 +225,7 @@ while true; do
         if (( streak_len >= STREAK_LIMIT )); then
           last_release=$now
           slog "release prior_streak_min=$(( streak_len / 60 ))"
-          send_notification "Claude Code: break registered" "You're unblocked. Welcome back."
+          send_notification "Claude Code: break registered" "You're unblocked. Welcome back." urgent
         fi
       fi
       streak_start=$latest
