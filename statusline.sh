@@ -13,6 +13,7 @@ cat >/dev/null
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 STATE="$ROOT/data/state.json"
 CONFIG="$ROOT/config.yaml"
+NUDGE_FILE="$ROOT/stats/nudge.txt"
 LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 
 mtime() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null; }
@@ -48,12 +49,25 @@ firm=$(yaml_int firm_nudge_minutes)
 hard=$(yaml_int hard_block_minutes)
 idle=$(yaml_int idle_threshold_minutes)
 
-if (( mins >= hard )); then
-  printf 'BLOCKED — %dm idle to release' "$idle"
-elif (( mins >= firm )); then
-  printf '%dm since break · FIRM NUDGE · blocked in %dm' "$mins" "$(( hard - mins ))"
-elif (( mins >= gentle )); then
-  printf '%dm since break · NUDGING · blocked in %dm' "$mins" "$(( hard - mins ))"
-else
-  printf '%dm since break · nudge in %dm · blocked in %dm' "$mins" "$(( gentle - mins ))" "$(( hard - mins ))"
+# Source of truth for tier is nudge.txt (what hook.sh acts on). Fall
+# back to streak math only if the nudge file is empty or stale — this
+# prevents the statusline from claiming "FIRM NUDGE" while hook.sh is
+# already blocking prompts based on a freshly-written hard_block.
+tier=""
+if [[ -s "$NUDGE_FILE" ]]; then
+  nudge_age=$(( now - $(mtime "$NUDGE_FILE") ))
+  if (( nudge_age < 180 )); then
+    tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
+  fi
 fi
+
+case "$tier" in
+  hard_block)
+    printf 'BLOCKED — %dm idle to release' "$idle" ;;
+  firm)
+    printf '%dm since break · FIRM NUDGE · blocked in %dm' "$mins" "$(( hard > mins ? hard - mins : 0 ))" ;;
+  gentle)
+    printf '%dm since break · NUDGING · blocked in %dm' "$mins" "$(( hard > mins ? hard - mins : 0 ))" ;;
+  *)
+    printf '%dm since break · nudge in %dm · blocked in %dm' "$mins" "$(( gentle > mins ? gentle - mins : 0 ))" "$(( hard > mins ? hard - mins : 0 ))" ;;
+esac
