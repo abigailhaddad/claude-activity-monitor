@@ -37,7 +37,17 @@ fi
 
 [[ -f "$STATE" && -f "$CONFIG" ]] || { printf 'break monitor: off'; exit 0; }
 
+# Monitor polls every 30s. If state.json is older than 2 minutes, the
+# daemon is probably dead — render a stopped marker so the user isn't
+# fooled by stale streak/idle numbers.
+state_age=$(( $(date +%s) - $(mtime "$STATE") ))
+if (( state_age > 120 )); then
+  printf 'break monitor: stopped'
+  exit 0
+fi
+
 streak_start=$(jq -r '.streak_start // 0' "$STATE" 2>/dev/null)
+last_event=$(jq -r '.last_event // 0' "$STATE" 2>/dev/null)
 [[ -z "$streak_start" || "$streak_start" == "0" ]] && { printf 'break: 0m'; exit 0; }
 
 now=$(date +%s)
@@ -48,6 +58,19 @@ gentle=$(yaml_int streak_limit_minutes)
 firm=$(yaml_int firm_nudge_minutes)
 hard=$(yaml_int hard_block_minutes)
 idle=$(yaml_int idle_threshold_minutes)
+
+# Idle progress toward a break-end reset. last_event is updated by the
+# monitor each poll (~30s cadence) to the time of the user's most recent
+# input while a coding app was frontmost. "now - last_event" climbs while
+# they're idle and snaps back to ~0m the next poll after they type,
+# which is the visible feedback the user wants.
+idle_min=0
+if [[ -n "$last_event" && "$last_event" != "0" ]]; then
+  idle_sec=$(( now - last_event ))
+  (( idle_sec < 0 )) && idle_sec=0
+  idle_min=$(( idle_sec / 60 ))
+  (( idle_min > idle )) && idle_min=$idle
+fi
 
 # Determine tier. Prefer nudge.txt (source of truth for what hook.sh
 # will do on the next prompt), but fall back to streak math when
@@ -66,13 +89,34 @@ if [[ -z "$tier" ]]; then
   fi
 fi
 
-case "$tier" in
-  hard_block)
-    printf 'BLOCKED — %dm idle to release' "$idle" ;;
-  firm)
-    printf '%dm since break · FIRM NUDGE · blocked in %dm' "$mins" "$(( hard > mins ? hard - mins : 0 ))" ;;
-  gentle)
-    printf '%dm since break · NUDGING · blocked in %dm' "$mins" "$(( hard > mins ? hard - mins : 0 ))" ;;
-  *)
-    printf '%dm since break · nudge in %dm · blocked in %dm' "$mins" "$(( gentle > mins ? gentle - mins : 0 ))" "$(( hard > mins ? hard - mins : 0 ))" ;;
-esac
+# Two display modes, keyed off of whether the user is currently idle:
+#   - coding (idle_min == 0) → "Nm since break · blocked in Xm"
+#   - break  (idle_min  > 0) → "break: Xm left" (counts down; resets to
+#                                coding mode when they type)
+# The break-mode countdown is the visible feedback the user asked for:
+# typing during a break restarts the idle clock, and they see it jump
+# back to coding mode within a monitor poll (~30s).
+blocked_in=$(( hard > mins ? hard - mins : 0 ))
+break_left=$(( idle > idle_min ? idle - idle_min : 0 ))
+
+if (( idle_min > 0 )); then
+  # break_left == 0 is a transient "idle past threshold, monitor is
+  # about to reset the streak" state (<30s window). Label it as done
+  # rather than "0m left" which reads like no progress.
+  if (( break_left == 0 )); then
+    suffix="break · done, resetting"
+  else
+    suffix=$(printf 'break: %dm left' "$break_left")
+  fi
+  if [[ "$tier" == "hard_block" ]]; then
+    printf 'BLOCKED · %s' "$suffix"
+  else
+    printf '%s' "$suffix"
+  fi
+else
+  if [[ "$tier" == "hard_block" ]]; then
+    printf 'BLOCKED · take a break'
+  else
+    printf '%dm since break · blocked in %dm' "$mins" "$blocked_in"
+  fi
+fi

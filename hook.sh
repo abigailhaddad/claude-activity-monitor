@@ -1,22 +1,39 @@
 #!/usr/bin/env bash
-# Claude Code UserPromptSubmit hook. Reads stats/nudge.txt and either
-# injects it as context (gentle/firm tiers) or blocks the prompt with
-# exit 2 (hard_block). Silent when no nudge is active or when the
-# monitor hasn't touched the file in STALE_SECONDS (treated as dead).
-#
-# The break monitor's activity signal is system-wide input idle time
-# (ioreg HIDIdleTime), read directly by monitor.sh — this hook does
-# not need to record anything.
+# Claude Code UserPromptSubmit hook. Two jobs:
+#   1. Touch data/last_prompt.ts — the monitor's canonical activity
+#      signal. Every UserPromptSubmit extends the streak; anything
+#      else (mouse, typing outside Claude, background agents) does not.
+#   2. Read stats/nudge.txt and either inject it as context
+#      (gentle/firm tiers) or block the prompt with exit 2 (hard_block).
+#      Also fires an OS banner so the nudge is visible, not just
+#      present in Claude's response body.
+# Silent when no nudge is active or when the monitor hasn't touched
+# the file in STALE_SECONDS (treated as dead daemon).
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 NUDGE_FILE="$ROOT/stats/nudge.txt"
 LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 STALE_SECONDS=180
 
-# Record this prompt so the statusline knows when to stop showing the
-# "break registered" confirmation (it persists until the next prompt).
 mkdir -p "$(dirname "$LAST_PROMPT_FILE")"
 : > "$LAST_PROMPT_FILE"
+
+banner() {
+  # Fire a small OS banner for the nudge. osascript first (reliable on
+  # macOS), terminal-notifier fallback, notify-send on Linux. Failures
+  # are swallowed — the banner is bonus, the poem / refusal is the
+  # real nudge.
+  local title="$1" body="$2" sound="${3:-Glass}"
+  if command -v osascript >/dev/null 2>&1; then
+    local t="${title//\\/\\\\}"; t="${t//\"/\\\"}"
+    local b="${body//\\/\\\\}";  b="${b//\"/\\\"}"
+    osascript -e "display notification \"${b}\" with title \"${t}\" sound name \"${sound}\"" >/dev/null 2>&1 &
+  elif command -v terminal-notifier >/dev/null 2>&1; then
+    terminal-notifier -title "$title" -message "$body" -sound "$sound" >/dev/null 2>&1 &
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "$title" "$body" >/dev/null 2>&1 &
+  fi
+}
 
 [[ -s "$NUDGE_FILE" ]] || exit 0
 
@@ -26,6 +43,12 @@ mtime=$(stat -f %m "$NUDGE_FILE" 2>/dev/null || stat -c %Y "$NUDGE_FILE" 2>/dev/
 
 tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
 body=$(tail -n +2 "$NUDGE_FILE")
+
+case "$tier" in
+  gentle)     banner "Break nudge" "Stand up, stretch, look away." Glass ;;
+  firm)       banner "Break overdue" "Step away — body is not furniture." Glass ;;
+  hard_block) banner "Claude Code paused" "Break required before you can prompt again." Basso ;;
+esac
 
 if [[ "$tier" == "hard_block" ]]; then
   printf '%s\n' "$body" >&2

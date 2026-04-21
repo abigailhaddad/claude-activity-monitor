@@ -9,53 +9,61 @@ agent) to install it on their machine. This file is the runbook.
 
 ## What it does
 
-- `monitor.sh` runs as a background daemon. Every 30s it reads system-wide
-  input idle time (mouse/keyboard) and the frontmost application name.
-  If the user has touched the mouse/keyboard recently *while a "coding
-  app" was frontmost*, the streak advances. Otherwise the monitor treats
-  the user as idle.
-- `hook.sh` is registered as a Claude Code `UserPromptSubmit` hook. On
-  every user prompt it reads `stats/nudge.txt` and either injects it as
-  context (gentle/firm tier) or exits 2 to block the prompt
-  (hard_block).
+- `hook.sh` is registered globally as a Claude Code `UserPromptSubmit`
+  hook in `~/.claude/settings.json`. On every user prompt it (a)
+  touches `data/last_prompt.ts` — this is the monitor's activity
+  signal — and (b) reads `stats/nudge.txt` and either injects it as
+  context (gentle/firm tier), or exits 2 to refuse the prompt
+  (hard_block). The hook also fires a small OS banner at each tier so
+  the nudge is visible outside the chat.
+- `monitor.sh` runs as a background daemon. Every 30s it reads the
+  mtime of `data/last_prompt.ts` and updates the streak. Mouse
+  movement, typing outside Claude Code, background agents, and
+  Claude's own tool use deliberately do NOT count — only real user
+  prompts.
 - The monitor writes tiered nudges into `stats/nudge.txt` once the
-  streak crosses each threshold (default 30 / 45 / 60 min in the shipped
-  config, but editable).
-- The block lifts once the user has been idle (no input while in a
-  coding app) for `idle_threshold_minutes` (default 5).
+  streak crosses each threshold, and fires an OS banner at the
+  transition. Thresholds default to 60 / 90 / 120 min in shipping
+  config (editable).
+- The hard-block lifts once no prompts have been submitted for
+  `idle_threshold_minutes` (default 10) — the monitor's next poll
+  will register that as a real break.
+- The user can force an immediate reset with `rm stats/nudge.txt`.
+  The monitor sees the deletion on its next poll and treats it as
+  "I'm taking a break now": streak_start is set to now, and a
+  release notification fires if the prior streak was ≥ gentle.
 
-Because `hook.sh` is global (registered in `~/.claude/settings.json`),
-this works across *every* Claude Code session on the machine, including
-new ones the user might open to try to bypass the block.
+Because `hook.sh` is global, this works across *every* Claude Code
+session on the machine, including new ones the user might open to try
+to bypass the block.
 
 ## Platform support
 
-- **macOS** — fully supported. Uses `ioreg` (HIDIdleTime) for input
-  detection and `osascript` for frontmost-app detection. First run of
-  the monitor may trigger an Accessibility permission prompt for the
-  terminal — the user needs to grant it, or the app-filter falls back
-  to "any input counts" (still works, just less precise).
-- **Linux X11** — best-effort. Needs `xprintidle` and `xdotool`
-  installed. Not extensively tested.
-- **Linux Wayland** — not supported (no portable idle-time primitive).
-- **Windows** — not supported.
+- **macOS** — fully supported. `osascript` for the notification
+  banner; see the notifications section below for the permission
+  prompt.
+- **Linux** — works. No X11 tools or idle-time primitives needed
+  anymore — activity comes from the Claude Code hook directly. Notifications
+  use `notify-send` when available.
+- **Windows** — should work anywhere bash + Claude Code runs (e.g.
+  WSL); notifications degrade to silent if none of osascript /
+  terminal-notifier / notify-send is available.
 
 ## Requirements
 
 - `bash`, `awk`, `sed`, `jq` (install `jq` if missing)
 - Claude Code installed
-- **Recommended on macOS**: `terminal-notifier` (`brew install
-  terminal-notifier`). The monitor prefers it over `osascript` because
-  `osascript -e 'display notification ...'` routes through "Script
-  Editor" and often silently fails to display on modern macOS unless
-  the user has granted Script Editor notification permission.
-  `terminal-notifier` has its own app bundle and is reliable. At the
-  hard-block tier it is also invoked with `-ignoreDnD` so the banner
-  pierces Do Not Disturb / Focus modes — appropriate because the user
-  explicitly asked to be stopped.
-  Fallback to `osascript` works when `terminal-notifier` is absent; if
-  the user reports missing notifications, tell them to either install
-  `terminal-notifier` or grant Script Editor permission.
+- **macOS notifications**: the monitor prefers `osascript` (built-in,
+  routes through Script Editor) and falls back to `terminal-notifier`
+  if osascript is unavailable. First-run may trigger a Script Editor
+  notification-permission prompt — the user needs to allow it, and set
+  the Script Editor alert style to Banners or Alerts. `terminal-notifier`
+  (`brew install terminal-notifier`) is a fine alternative but its
+  permission state can silently desync (exit 0 but no banner) on some
+  setups, which is why it's the fallback. If the user reports missing
+  notifications: grant Script Editor permission; if still broken, try
+  `osascript -e 'display notification "test" with title "test"'` from
+  a terminal to confirm the backend works at all.
 
 ## Install
 
@@ -108,25 +116,25 @@ After install, tell the user:
 
 - **Nothing to do** — the monitor runs in the background; every Claude
   Code session will enforce it automatically.
-- **The statusline at the bottom of Claude Code shows the current
-  streak** (`12m since break · nudge in 18m · blocked in 48m`). As they
-  approach thresholds, the readout changes to `NUDGING`, `FIRM NUDGE`,
-  or `BLOCKED`.
-- **At the gentle threshold**, Claude will open its next reply with a
-  poem telling them to take a break. At the firm threshold, the poem
-  gets meaner. Past the hard threshold, new prompts are refused
-  entirely until they step away from the keyboard for
-  `idle_threshold_minutes`.
-- **What counts as "coding" vs. "break":** physical input
-  (mouse/keyboard) while the frontmost app is in `config.yaml`'s
-  `coding_apps` list. Switching to email/Slack/browser counts as a
-  break once they spend more than `idle_threshold_minutes` there.
-- **To customize** — edit `config.yaml` and restart the monitor. The
-  poem instructions, thresholds, notification text, and coding-app
-  list are all in there. Replace the poem with a roast, a haiku, a
-  song, whatever.
-- **If they get locked out** (monitor bug, stale nudge, etc.):
-  `rm stats/nudge.txt` clears the current nudge globally.
+- **The statusline** shows two modes:
+  - Coding (just prompted): `Nm since break · blocked in Xm`, or
+    `BLOCKED · take a break` past the hard threshold.
+  - Break (no prompts for a while): `break: Xm left` — a countdown
+    toward `idle_threshold_minutes`. If they prompt Claude again, the
+    statusline snaps back to coding mode, making the reset visible.
+- **At the gentle threshold** Claude opens its next reply with a poem
+  telling them to take a break + an OS banner fires. Firm threshold
+  is meaner. Past hard_block, new prompts are refused entirely — they
+  must stop prompting for `idle_threshold_minutes` to unblock.
+- **What counts as activity:** *only* Claude Code `UserPromptSubmit`
+  events. Mouse movement, typing in the terminal, other apps, and
+  Claude's own tool use do NOT count.
+- **To customize** — edit `config.yaml` and restart the monitor.
+  Thresholds, poem instructions, and notification text live there.
+- **Manual reset:** `rm stats/nudge.txt`. The monitor detects this
+  on its next poll and sets `streak_start` to now — statusline flips
+  back to "0m since break", and a release notification fires if the
+  prior streak was long enough to matter.
 
 ## Verify
 
@@ -155,9 +163,6 @@ Everything user-visible lives in `config.yaml`:
   roast, a haiku, a song, a drill-sergeant memo. Placeholders available:
   `{mins}`, `{idle_min}`, `{streak_limit_min}`.
 - OS notification title/body (`{tier}_notification_title/body`).
-- `coding_apps` — comma-separated list of app names (case-insensitive
-  substring match) whose input counts. When the user's frontmost app
-  is not in this list, their input does not keep the streak alive.
 
 After editing, restart the monitor so it picks up changes:
 
@@ -181,12 +186,11 @@ stats/activity.log          — break/nudge event history (shareable)
 
 ## Gotchas
 
-- The activity signal is *physical input while a coding app is
-  frontmost*. This means: watching Claude work while in Terminal keeps
-  the streak alive (via mouse movement); switching to email or Slack
-  pauses it; walking away pauses it. Background `/loop` or agents do
-  nothing on their own — the monitor is watching the human, not the
-  machine.
+- The activity signal is *only* Claude Code user prompt submissions.
+  Watching Claude work on a long tool call, reading docs, or typing
+  in a different terminal tab do NOT count as activity. Background
+  `/loop` or agents do nothing on their own — the monitor is
+  watching *you* prompting Claude, not the machine.
 - If the monitor dies, `stats/nudge.txt` goes stale. `hook.sh` ignores
   nudges older than 180s, so a dead monitor does not permanently lock
   the user out. Manual escape: `rm stats/nudge.txt`.

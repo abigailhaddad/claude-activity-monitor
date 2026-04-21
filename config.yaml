@@ -9,14 +9,6 @@ firm_nudge_minutes: 90        # firm nudge tier — lead with the break
 hard_block_minutes: 120       # block prompts entirely until idle_threshold is met
 notify_cooldown_minutes: 15   # minimum time between OS notifications
 
-# Apps whose frontmost-window activity counts as "coding." When the
-# frontmost app is NOT in this list, your mouse/keyboard input is
-# treated as idle — so switching to email or Slack for a couple of
-# minutes does not keep the break clock ticking, and staying in them
-# past idle_threshold_minutes registers as a break. Case-insensitive
-# substring match. Leave empty to disable the filter (any input counts).
-coding_apps: Terminal,iTerm,Warp,Ghostty,Alacritty,Kitty,Hyper,Code,Cursor,Zed
-
 # --- Nudge text ---------------------------------------------------------
 # The instructions Claude sees at each tier. Replace the poem with a song,
 # a roast, a haiku, a drill-sergeant memo — anything. These go straight
