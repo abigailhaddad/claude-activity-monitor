@@ -26,6 +26,25 @@ whatever you put there.
 "Take a break" banners that you can dismiss don't work. This one stops
 the work until you rest.
 
+## Demo
+
+<!--
+  TODO: drop a short screen recording here. Easiest workflow:
+    1. Temporarily set test thresholds in config.yaml (e.g. 2/4/6 min)
+       and restart the monitor.
+    2. Record with QuickTime (File → New Screen Recording), framing the
+       Claude Code window so the statusline is visible.
+    3. Drag the .mov/.mp4 into the GitHub web editor for README.md —
+       GitHub hosts it at user-images.githubusercontent.com and embeds
+       an inline player. Or convert to .gif with `ffmpeg` first.
+    4. Show: statusline counting down → gentle poem → firm poem →
+       hard block refusing a prompt → break taken → "break registered"
+       banner.
+    5. Reset thresholds to your real values when done.
+-->
+
+*(coming soon — a 30s clip showing the statusline countdown, a poem firing, a hard block, and the break-registered confirmation.)*
+
 ## Install
 
 ```sh
