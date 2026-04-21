@@ -78,6 +78,13 @@ something like `15m since break · nudge in 15m · blocked in 45m`.
 - macOS or Linux X11
 - `bash`, `jq`, `awk`, `sed` — all standard. Install `jq` if missing
   (`brew install jq` / `apt install jq`).
+- **Recommended on macOS**: `brew install terminal-notifier`. Without
+  it, the monitor falls back to `osascript`, which on modern macOS
+  often fails silently to show notifications unless you grant "Script
+  Editor" notification permission in System Settings. `terminal-notifier`
+  has its own app bundle and is reliable out of the box. At the
+  hard-block tier it's also used with `-ignoreDnD` so you see the
+  banner even in Do Not Disturb / Focus mode.
 - Claude Code
 
 ## Configuration

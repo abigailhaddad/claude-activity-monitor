@@ -135,22 +135,41 @@ latest_event_epoch() {
   fi
 }
 
+send_notification() {
+  # Platform-agnostic banner notification. Preference order:
+  #   1. terminal-notifier (macOS, brew install terminal-notifier) —
+  #      reliable, has its own app bundle so Notification Center honors
+  #      it without the Script Editor permission quirk.
+  #   2. osascript (macOS built-in) — works only if the user has granted
+  #      "Script Editor" notification permission in System Settings.
+  #   3. notify-send (Linux libnotify).
+  # Pass urgency=urgent as the third arg to use a more jarring sound and
+  # pierce Do Not Disturb (where the notifier supports it).
+  local title="$1" body="$2" urgency="${3:-normal}"
+  local sound="Glass"
+  [[ "$urgency" == "urgent" ]] && sound="Basso"
+  if command -v terminal-notifier >/dev/null 2>&1; then
+    local flags=(-title "$title" -message "$body" -sound "$sound")
+    [[ "$urgency" == "urgent" ]] && flags+=(-ignoreDnD)
+    terminal-notifier "${flags[@]}" >/dev/null 2>&1 || true
+  elif command -v osascript >/dev/null 2>&1; then
+    local t="${title//\\/\\\\}"; t="${t//\"/\\\"}"
+    local b="${body//\\/\\\\}";  b="${b//\"/\\\"}"
+    osascript -e "display notification \"${b}\" with title \"${t}\" sound name \"${sound}\"" >/dev/null 2>&1 || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    local urgency_flag=()
+    [[ "$urgency" == "urgent" ]] && urgency_flag=(--urgency=critical)
+    notify-send "${urgency_flag[@]}" "$title" "$body" >/dev/null 2>&1 || true
+  fi
+}
+
 notify() {
   local mins="$1" tier="$2"
-  local title body
+  local title body urgency="normal"
   title=$(render_template "$(yaml_get "${tier}_notification_title")" "$mins")
   body=$(render_template  "$(yaml_get "${tier}_notification_body")"  "$mins")
-  # Escape backslashes then double quotes for AppleScript string literals.
-  # Order matters: backslashes first so the quote escapes we add below
-  # are not themselves re-escaped.
-  title=${title//\\/\\\\}; title=${title//\"/\\\"}
-  body=${body//\\/\\\\};   body=${body//\"/\\\"}
-  # macOS: osascript. Linux: notify-send (libnotify). Silent on either if absent.
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"${body}\" with title \"${title}\" sound name \"Glass\"" >/dev/null 2>&1 || true
-  elif command -v notify-send >/dev/null 2>&1; then
-    notify-send "${title}" "${body}" >/dev/null 2>&1 || true
-  fi
+  [[ "$tier" == "hard_block" ]] && urgency="urgent"
+  send_notification "$title" "$body" "$urgency"
 }
 
 write_nudge() {
@@ -172,13 +191,13 @@ clear_nudge() { : > "$NUDGE_FILE"; }
 
 read_state() {
   if [[ -f "$STATE_FILE" ]]; then cat "$STATE_FILE"
-  else echo '{"last_event":0,"streak_start":0,"last_notified":0}'
+  else echo '{"last_event":0,"streak_start":0,"last_notified":0,"last_release":0}'
   fi
 }
 
 write_state() {
-  printf '{"last_event":%s,"streak_start":%s,"last_notified":%s}\n' \
-    "$1" "$2" "$3" > "$STATE_FILE"
+  printf '{"last_event":%s,"streak_start":%s,"last_notified":%s,"last_release":%s}\n' \
+    "$1" "$2" "$3" "$4" > "$STATE_FILE"
 }
 
 plog "monitor started (pid=$$, streak_limit=${STREAK_LIMIT}s, idle=${IDLE_THRESHOLD}s, poll=${POLL_INTERVAL}s)"
@@ -192,6 +211,7 @@ while true; do
   last_event=$(echo "$state" | jq -r '.last_event')
   streak_start=$(echo "$state" | jq -r '.streak_start')
   last_notified=$(echo "$state" | jq -r '.last_notified')
+  last_release=$(echo "$state" | jq -r '.last_release // 0')
 
   if (( latest > last_event )); then
     gap=$(( latest - last_event ))
@@ -199,6 +219,14 @@ while true; do
       if (( last_event > 0 )); then
         streak_len=$(( last_event - streak_start ))
         slog "break_end prior_streak_min=$(( streak_len / 60 )) gap_min=$(( gap / 60 ))"
+        # If the prior streak had crossed at least the gentle threshold,
+        # this break is a real "release" — log + notify so the user
+        # knows they are unblocked.
+        if (( streak_len >= STREAK_LIMIT )); then
+          last_release=$now
+          slog "release prior_streak_min=$(( streak_len / 60 ))"
+          send_notification "Claude Code: break registered" "You're unblocked. Welcome back."
+        fi
       fi
       streak_start=$latest
       clear_nudge
@@ -230,6 +258,6 @@ while true; do
     clear_nudge
   fi
 
-  write_state "$last_event" "$streak_start" "$last_notified"
+  write_state "$last_event" "$streak_start" "$last_notified" "$last_release"
   sleep "$POLL_INTERVAL"
 done

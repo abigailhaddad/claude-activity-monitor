@@ -10,7 +10,13 @@
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 NUDGE_FILE="$ROOT/stats/nudge.txt"
+LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 STALE_SECONDS=180
+
+# Record this prompt so the statusline knows when to stop showing the
+# "break registered" confirmation (it persists until the next prompt).
+mkdir -p "$(dirname "$LAST_PROMPT_FILE")"
+: > "$LAST_PROMPT_FILE"
 
 [[ -s "$NUDGE_FILE" ]] || exit 0
 

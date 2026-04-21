@@ -3,10 +3,10 @@
 
 # --- Thresholds ---------------------------------------------------------
 poll_interval_seconds: 30
-idle_threshold_minutes: 5     # gap between your prompts that counts as a break (also the length required to release a hard_block)
-streak_limit_minutes: 30      # gentle nudge tier
-firm_nudge_minutes: 45        # firm nudge tier — lead with the break
-hard_block_minutes: 60        # block prompts entirely until idle_threshold is met
+idle_threshold_minutes: 2     # gap between your prompts that counts as a break (also the length required to release a hard_block)
+streak_limit_minutes: 2       # gentle nudge tier
+firm_nudge_minutes: 4         # firm nudge tier — lead with the break
+hard_block_minutes: 6         # block prompts entirely until idle_threshold is met
 notify_cooldown_minutes: 15   # minimum time between OS notifications
 
 # Apps whose frontmost-window activity counts as "coding." When the

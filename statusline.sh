@@ -13,6 +13,26 @@ cat >/dev/null
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 STATE="$ROOT/data/state.json"
 CONFIG="$ROOT/config.yaml"
+LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
+
+mtime() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null; }
+
+# If a break was just registered (a nudged streak ended with a real
+# idle gap), show a confirmation banner until the next UserPromptSubmit.
+# This works even before the user has ever prompted — useful for
+# freshly-unblocked sessions the user is returning to.
+if [[ -f "$STATE" ]]; then
+  last_release=$(jq -r '.last_release // 0' "$STATE" 2>/dev/null)
+  if [[ -n "$last_release" && "$last_release" != "0" ]]; then
+    last_prompt=0
+    [[ -f "$LAST_PROMPT_FILE" ]] && last_prompt=$(mtime "$LAST_PROMPT_FILE")
+    last_prompt=${last_prompt:-0}
+    if (( last_release > last_prompt )); then
+      printf 'break registered · Claude Code is unblocked'
+      exit 0
+    fi
+  fi
+fi
 
 [[ -f "$STATE" && -f "$CONFIG" ]] || { printf 'break monitor: off'; exit 0; }
 
@@ -26,8 +46,8 @@ yaml_int() { sed -nE "s/^$1:[[:space:]]*([0-9]+).*/\1/p" "$CONFIG"; }
 gentle=$(yaml_int streak_limit_minutes)
 firm=$(yaml_int firm_nudge_minutes)
 hard=$(yaml_int hard_block_minutes)
-
 idle=$(yaml_int idle_threshold_minutes)
+
 if (( mins >= hard )); then
   printf 'BLOCKED — %dm idle to release' "$idle"
 elif (( mins >= firm )); then

@@ -44,6 +44,18 @@ new ones the user might open to try to bypass the block.
 
 - `bash`, `awk`, `sed`, `jq` (install `jq` if missing)
 - Claude Code installed
+- **Recommended on macOS**: `terminal-notifier` (`brew install
+  terminal-notifier`). The monitor prefers it over `osascript` because
+  `osascript -e 'display notification ...'` routes through "Script
+  Editor" and often silently fails to display on modern macOS unless
+  the user has granted Script Editor notification permission.
+  `terminal-notifier` has its own app bundle and is reliable. At the
+  hard-block tier it is also invoked with `-ignoreDnD` so the banner
+  pierces Do Not Disturb / Focus modes — appropriate because the user
+  explicitly asked to be stopped.
+  Fallback to `osascript` works when `terminal-notifier` is absent; if
+  the user reports missing notifications, tell them to either install
+  `terminal-notifier` or grant Script Editor permission.
 
 ## Install
 
