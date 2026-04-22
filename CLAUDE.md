@@ -9,40 +9,48 @@ agent) to install it on their machine. This file is the runbook.
 
 ## What it does
 
+Two processes, clean split of responsibilities:
+
 - `hook.sh` is registered globally as a Claude Code hook in
-  `~/.claude/settings.json` for TWO events: `UserPromptSubmit` and
-  `Stop`. Both fire on `hook.sh`; the script branches on the
-  `hook_event_name` in stdin JSON.
-  - On `UserPromptSubmit`: (a) touches `data/last_prompt.ts` — the
-    monitor's activity signal — and (b) reads `stats/active.txt` and
-    either injects it as context (nudge tier) or exits 2 to refuse the
-    prompt (block tier). Also fires an OS banner at each tier.
-  - On `Stop` (response-end): touches `data/last_prompt.ts` ONLY and
-    exits 0. We deliberately don't run the tier logic here — exit 2
-    on a Stop hook blocks response completion (infinite-loop risk),
-    and injecting a nudge at response-end is redundant with the
-    next UserPromptSubmit's injection.
-  - Why both? `UserPromptSubmit` alone misses mid-response
-    interjections (a message sent while Claude is running a tool
-    doesn't fire it). `Stop` catches those cases by firing at the end
-    of every response, so long tool runs still count as "engaged."
+  `~/.claude/settings.json` for `UserPromptSubmit` only. (An earlier
+  version also registered `Stop` to catch interjections as activity;
+  that was removed because it meant a user who walked away while
+  Claude was streaming still counted as engaged. Only real user
+  prompts count now.) The hook:
+  - Touches `data/last_prompt.ts` — the monitor's activity signal —
+    *unless* the current tier is `block`. Refused prompts must not
+    reset the idle clock or the user could never unblock.
+  - On nudge tier: injects `stats/active.txt`'s body into the chat
+    (Claude writes a poem in response) ONCE per tier-epoch, gated
+    by `data/last_injected.ts`. First prompt in any chat during a
+    nudge epoch fires; every other prompt everywhere stays silent
+    until the monitor flips tier again.
+  - On block tier: refuses the prompt with exit 2 and prints the
+    block message to stderr. Every attempt, no gating.
 - `monitor.sh` runs as a background daemon. Every 30s it reads the
   mtime of `data/last_prompt.ts` and updates the streak. Mouse
   movement, typing outside Claude Code, background agents, and
   Claude's own tool use do NOT count — only real user prompts.
 - Two tiers: `nudge` and `block`. The monitor writes the active
-  tier into `stats/active.txt` once the streak crosses each
-  threshold, and fires an OS banner at the transition. Threshold
-  *values* live in `config.yaml` — do not quote specific minute
-  numbers anywhere else, they will drift.
+  tier into `stats/active.txt` *only on tier transitions*. Rewriting
+  every poll would make each chat see a different `{mins}` value
+  depending on when its hook ran, so the poem number is frozen at
+  the moment the tier flipped. Threshold *values* live in
+  `config.yaml` — do not quote specific minute numbers anywhere
+  else, they will drift.
+- OS banners and audio are the monitor's job, not the hook's.
+  The hook never rings.
 - The block lifts once no prompts have been submitted for
-  `idle_threshold_minutes` — the monitor's next poll registers
-  that as a real break.
+  `idle_threshold_minutes`. A release notification + sound fires
+  at the moment the idle timer crosses (not on the next prompt),
+  and *only* if the prior tier was `block` — nudge-tier idle
+  crossings are silent. The monitor fires this from the main loop
+  when it detects the idle transition, so the user hears the "you
+  can prompt again" signal while they're still away from the keyboard.
 - The user can force an immediate reset with `rm stats/active.txt`.
   The monitor sees the deletion on its next poll and treats it as
   "I'm taking a break now": streak_start is set to now, and a
-  release notification fires if the prior streak was past the
-  nudge threshold.
+  release notification fires if the prior tier was `block`.
 
 Because `hook.sh` is global, this works across *every* Claude Code
 session on the machine, including new ones the user might open to try
@@ -50,15 +58,9 @@ to bypass the block.
 
 ## Platform support
 
-- **macOS** — fully supported. `osascript` for the notification
-  banner; see the notifications section below for the permission
-  prompt.
-- **Linux** — works. No X11 tools or idle-time primitives needed
-  anymore — activity comes from the Claude Code hook directly. Notifications
-  use `notify-send` when available.
-- **Windows** — should work anywhere bash + Claude Code runs (e.g.
-  WSL); notifications degrade to silent if none of osascript /
-  terminal-notifier / notify-send is available.
+macOS only. The live menubar readout is a SwiftBar plugin (Mac
+app), so the whole project is gated on macOS — `install.sh` hard
+fails on non-Darwin.
 
 ## Requirements
 
@@ -95,8 +97,8 @@ What `install.sh` does:
    user sees their current streak (e.g. `break: 23m`) at the bottom
    of every Claude Code session. If a `statusLine` is already set, it
    is left alone and a note is printed.
-3. Installs a launchd agent (macOS) or systemd user unit (Linux) so
-   `monitor.sh` runs at login and is restarted if it dies.
+3. Installs a launchd agent so `monitor.sh` runs at login and is
+   restarted if it dies.
 
 ### Manual install (if `install.sh` isn't available)
 
@@ -106,9 +108,6 @@ Edit `~/.claude/settings.json` — add the hook and the statusline:
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "/absolute/path/to/claude-activity-monitor/hook.sh" } ] }
-    ],
-    "Stop": [
       { "hooks": [ { "type": "command", "command": "/absolute/path/to/claude-activity-monitor/hook.sh" } ] }
     ]
   },
@@ -137,19 +136,26 @@ After install, tell the user:
     toward `idle_threshold_minutes`. If they prompt Claude again,
     the statusline snaps back to coding mode, making the reset
     visible.
-- **At the nudge threshold** Claude opens its next reply with a
-  reminder to take a break, and an OS banner fires. Past the block
-  threshold, new prompts are refused entirely — they must stop
-  prompting for `idle_threshold_minutes` to unblock.
+- **At the nudge threshold** Claude opens *one* reply with a
+  reminder to take a break (once per tier-epoch, across all open
+  chats), and an OS banner fires. Past the block threshold, new
+  prompts are refused entirely — the user must stop prompting for
+  `idle_threshold_minutes` to unblock. Refused prompts do not
+  count as activity, so the idle clock keeps running.
 - **What counts as activity:** *only* Claude Code `UserPromptSubmit`
-  events. Mouse movement, typing in the terminal, other apps, and
-  Claude's own tool use do NOT count.
+  events, and only when not currently blocked. Response-end
+  (`Stop`), mouse movement, typing in the terminal, other apps,
+  Claude's own tool use, and background `/loop` or agents all
+  do NOT count.
+- **Release sound fires only on block lift**, not on nudge-tier
+  idle crossings, and fires at the moment the idle timer crosses
+  the threshold (not on the user's next prompt).
 - **To customize** — edit `config.yaml` and restart the monitor.
   Thresholds, poem instructions, and notification text live there.
 - **Manual reset:** `rm stats/active.txt`. The monitor detects this
   on its next poll and sets `streak_start` to now — statusline flips
-  back to "0m since break", and a release notification fires if the
-  prior streak was long enough to matter.
+  back to "0m since break", and a release notification fires only
+  if the prior tier was `block`.
 
 ## Verify
 
@@ -198,11 +204,13 @@ monitor.sh                  — background daemon
 hook.sh                     — Claude Code UserPromptSubmit hook
 statusline.sh               — Claude Code statusLine widget (current streak)
 install.sh                  — one-shot installer (hook + statusline + daemon)
-uninstall.sh                — removes launchd/systemd unit, hook, statusLine
+uninstall.sh                — removes launchd agent, hook, statusLine, SwiftBar symlink
 tests/                      — shell test suite (bash tests/run.sh)
 .github/workflows/tests.yml — CI running the test suite on push/PR
 data/state.json             — current streak state (gitignored)
 data/monitor.log            — private debug log (gitignored)
+data/last_prompt.ts         — mtime = timestamp of last UserPromptSubmit (gitignored)
+data/last_injected.ts       — gate: nudge injects only when active.txt is newer (gitignored)
 stats/active.txt            — current tier message (empty when inactive)
 stats/activity.log          — break/nudge event history (shareable)
 ```

@@ -53,9 +53,10 @@ out=$(bash "$TMP/hook.sh" 2>&1); ec=$?
 assert_exit "$ec" "0" "stale active: exit 0 (not blocked)"
 assert_eq "$out" "" "stale active: no output"
 
-# 5. Stop event with block tier → exit 0 (no refusal; exit 2 on Stop
-#    would block the response from completing), no output, but
-#    last_prompt.ts is still touched (activity signal).
+# 5. Stop event → exit 0, no output, and last_prompt.ts NOT touched.
+#    Response-end is deliberately not counted as engagement: the user
+#    may have walked away while Claude was streaming. Only actual
+#    UserPromptSubmit events (the user typing) count as activity.
 cat > "$ACTIVE" <<EOF
 TIER=block
 you are blocked, step away
@@ -64,13 +65,13 @@ rm -f "$LAST_PROMPT"
 out=$(printf '{"hook_event_name":"Stop"}' | bash "$TMP/hook.sh" 2>&1); ec=$?
 assert_exit "$ec" "0" "Stop + block: exit 0 (no refusal)"
 assert_eq "$out" "" "Stop: no output"
-[[ -f "$LAST_PROMPT" ]] && {
+[[ ! -f "$LAST_PROMPT" ]] && {
   PASS=$((PASS + 1))
-  echo "  ✓ Stop: last_prompt.ts touched (activity signal recorded)"
+  echo "  ✓ Stop: last_prompt.ts NOT touched (response-end is not engagement)"
 } || {
   FAIL=$((FAIL + 1))
-  FAILED_TESTS+=("Stop: last_prompt.ts not touched")
-  echo "  ✗ Stop: last_prompt.ts not touched"
+  FAILED_TESTS+=("Stop: last_prompt.ts was touched")
+  echo "  ✗ Stop: last_prompt.ts was touched (should be user-prompts-only)"
 }
 
 # 6. UserPromptSubmit event with block tier → exit 2 (unchanged
@@ -80,5 +81,52 @@ rm -f "$LAST_PROMPT"
 stderr=$(printf '{"hook_event_name":"UserPromptSubmit"}' | bash "$TMP/hook.sh" 2>&1 >/dev/null); ec=$?
 assert_exit "$ec" "2" "UserPromptSubmit + block: exit 2 (prompt refused)"
 assert_contains "$stderr" "you are blocked" "UserPromptSubmit: body on stderr"
+
+# 7. Block tier does NOT touch last_prompt.ts. If it did, every
+#    rejected attempt would reset the monitor's idle countdown and
+#    the user could never unblock.
+cat > "$ACTIVE" <<EOF
+TIER=block
+you are blocked
+EOF
+rm -f "$LAST_PROMPT"
+bash "$TMP/hook.sh" </dev/null >/dev/null 2>&1
+[[ ! -f "$LAST_PROMPT" ]] && {
+  PASS=$((PASS + 1))
+  echo "  ✓ block: last_prompt.ts NOT touched (idle clock protected)"
+} || {
+  FAIL=$((FAIL + 1))
+  FAILED_TESTS+=("block: last_prompt.ts was touched")
+  echo "  ✗ block: last_prompt.ts was touched — user can never unblock"
+}
+
+# 8. Nudge once-per-epoch: a second prompt with unchanged active.txt
+#    stays silent. First call injects (tests case 2 already proved
+#    this); the marker file prevents re-injection until the monitor
+#    rewrites active.txt on a tier transition.
+cat > "$ACTIVE" <<EOF
+TIER=nudge
+hey take a break for real
+EOF
+rm -f "$TMP/data/last_injected.ts"
+out=$(bash "$TMP/hook.sh" 2>/dev/null); ec=$?
+assert_exit "$ec" "0" "nudge first call: exit 0"
+assert_contains "$out" "take a break" "nudge first call: body printed"
+# Second call — active.txt mtime unchanged, marker is now newer → silent.
+out=$(bash "$TMP/hook.sh" 2>/dev/null); ec=$?
+assert_exit "$ec" "0" "nudge second call: exit 0"
+assert_eq "$out" "" "nudge second call: silent (once-per-epoch gate held)"
+
+# 9. Nudge re-arms when active.txt is rewritten (new tier-epoch).
+#    Bump active.txt's mtime forward past the marker and confirm
+#    injection fires again.
+sleep 1
+cat > "$ACTIVE" <<EOF
+TIER=nudge
+hey take a different break
+EOF
+out=$(bash "$TMP/hook.sh" 2>/dev/null); ec=$?
+assert_exit "$ec" "0" "nudge re-arm: exit 0"
+assert_contains "$out" "different break" "nudge re-arm: new body injected"
 
 report

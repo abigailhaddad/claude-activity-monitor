@@ -221,9 +221,9 @@ while true; do
     prior_streak=$(( last_event - streak_start ))
     (( prior_streak < 0 )) && prior_streak=0
     slog "manual_reset prior_streak_min=$(( prior_streak / 60 )) prior_tier=${last_tier}"
-    if (( prior_streak >= NUDGE_THRESHOLD )); then
+    if [[ "$last_tier" == "block" ]]; then
       last_release=$now
-      send_notification "Claude Code: break registered" "Manual reset. You're unblocked." urgent
+      send_notification "Claude Code: unblocked" "Manual reset. You can prompt again." urgent
       play_audio "$(yaml_get release_audio_file)"
     fi
     streak_start=$now
@@ -239,14 +239,18 @@ while true; do
     if (( last_event == 0 || gap > IDLE_THRESHOLD )); then
       if (( last_event > 0 )); then
         streak_len=$(( last_event - streak_start ))
-        slog "break_end prior_streak_min=$(( streak_len / 60 )) gap_min=$(( gap / 60 ))"
-        # If the prior streak had crossed at least the nudge threshold,
-        # this break is a real "release" — log + notify so the user
-        # knows they are unblocked.
-        if (( streak_len >= NUDGE_THRESHOLD )); then
+        slog "break_end prior_streak_min=$(( streak_len / 60 )) gap_min=$(( gap / 60 )) prior_tier=${last_tier}"
+        # Only block-tier streaks trigger a release ping. Nudge
+        # idle-crossings don't: the user just wants to know when
+        # a refusal has lifted, not every time they step away
+        # mid-nudge. (Normally the idle-crossing branch below
+        # fires the release *while* the user is still away, but
+        # we keep this path too for the edge case where the poll
+        # cadence races the user's return prompt.)
+        if [[ "$last_tier" == "block" ]]; then
           last_release=$now
           slog "release prior_streak_min=$(( streak_len / 60 ))"
-          send_notification "Claude Code: break registered" "You're unblocked. Welcome back." urgent
+          send_notification "Claude Code: unblocked" "Break registered. You can prompt again." urgent
           play_audio "$(yaml_get release_audio_file)"
         fi
       fi
@@ -266,8 +270,16 @@ while true; do
     fi
     if [[ -n "$tier" ]]; then
       mins=$(( active_streak / 60 ))
-      write_nudge "$mins" "$tier"
-      last_tier=$tier
+      # Only rewrite active.txt on tier transitions. Rewriting every
+      # poll causes two problems: different Claude Code sessions
+      # prompting seconds apart see different {mins} values, and the
+      # mtime churn breaks any "fire once per tier-epoch" gating the
+      # hook might want to do. Freeze the message at the moment the
+      # tier flips; it stays stable until the next transition.
+      if [[ "$last_tier" != "$tier" ]]; then
+        write_nudge "$mins" "$tier"
+        last_tier=$tier
+      fi
       if (( now - last_notified >= NOTIFY_COOLDOWN )); then
         notify "$mins" "$tier"
         slog "nudged tier=${tier} streak_min=${mins}"
@@ -278,7 +290,34 @@ while true; do
       last_tier=""
     fi
   else
-    # On a break right now — no nudge needed.
+    # On a break right now — no nudge needed. If we were in a tier
+    # on the prior poll and the streak was long enough to matter,
+    # fire the release exactly once at the moment the idle timer
+    # crossed the threshold (not on the next prompt — the user
+    # wants to hear "break registered" while they're still away,
+    # not when they come back).
+    if [[ -n "$last_tier" ]]; then
+      prior_streak=$(( last_event - streak_start ))
+      (( prior_streak < 0 )) && prior_streak=0
+      slog "break_end prior_streak_min=$(( prior_streak / 60 )) prior_tier=${last_tier}"
+      # Release sound only fires on BLOCK lift — the one moment
+      # that actually matters (the refusal has stopped). Firing on
+      # every nudge-tier idle crossing would ping the user every
+      # time they step away for a few minutes mid-session, which
+      # is noise, not signal.
+      if [[ "$last_tier" == "block" ]]; then
+        last_release=$now
+        slog "release prior_streak_min=$(( prior_streak / 60 ))"
+        send_notification "Claude Code: unblocked" "Break registered. You can prompt again." urgent
+        play_audio "$(yaml_get release_audio_file)"
+      fi
+      # Pre-seed last_event so the "user prompted after idle gap"
+      # path in the next poll doesn't *also* fire a second release
+      # for the same streak. The next real prompt will update
+      # last_event normally via the latest-mtime read.
+      last_event=$now
+      streak_start=$now
+    fi
     clear_nudge
     last_tier=""
   fi
