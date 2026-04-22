@@ -2,11 +2,10 @@
 
 ![The monitor watched, the monitor waited. The monitor's patience has fully deflated. Two hours of coding, no break in between — now close the laptop. Go touch something green.](docs/screenshots/hard_block.jpg)
 
-A break monitor for Claude Code that makes you take breaks.
-
-It tracks how long you've been prompting Claude — across every
-session, every chat — and escalates from a funny poem to a hard block
-on new prompts until you step away.
+Makes Claude Code refuse your prompts after you've been at it too
+long. It counts how long you've been prompting Claude — across
+every session, every chat — and escalates from a funny poem to a
+hard block on new prompts until you step away.
 
 Three tiers, all configurable:
 
@@ -26,29 +25,9 @@ pirate shanty, a drill-sergeant memo — Claude reads whatever you
 put there. Change the break length to 2 minutes or 30. The shipped
 defaults are a starting point, not a prescription.
 
-The monitor only watches prompts you send to Claude Code. Walking
-away from the keyboard or working in other apps does nothing on its
-own — a break is just time spent not prompting Claude.
-
-## Demo
-
-<!--
-  TODO: drop a short screen recording here. Easiest workflow:
-    1. Temporarily dial all thresholds way down in config.yaml and
-       restart the monitor.
-    2. Record with QuickTime (File → New Screen Recording), framing
-       the Claude Code window so the statusline is visible.
-    3. Drag the .mov/.mp4 into the GitHub web editor for README.md —
-       GitHub hosts it at user-images.githubusercontent.com and embeds
-       an inline player. Or convert to .gif with `ffmpeg` first.
-    4. Show: statusline counting down → gentle poem → firm poem →
-       hard block refusing a prompt → break taken → "break registered"
-       banner.
-    5. Reset thresholds when done.
--->
-
-*(coming soon — a short clip showing the statusline countdown, a
-poem firing, a hard block, and the break-registered confirmation.)*
+Only the prompts you send to Claude Code count. Walking away from
+the keyboard or working in other apps does nothing on its own — a
+break is just time spent not prompting Claude.
 
 ## Install
 
@@ -58,10 +37,10 @@ cd claude-activity-monitor
 ./install.sh
 ```
 
-`install.sh` registers `hook.sh` as a global `UserPromptSubmit` hook
-in `~/.claude/settings.json` (idempotent — safe to re-run), installs
-a statusLine widget that shows your current streak, and starts the
-background monitor via launchd (macOS) or a systemd user unit
+`install.sh` wires a `UserPromptSubmit` hook into
+`~/.claude/settings.json` (idempotent — safe to re-run), installs a
+statusLine widget that shows your current streak, and starts a tiny
+background helper via launchd (macOS) or a systemd user unit
 (Linux).
 
 Open a new Claude Code session and go. The statusline shows your
