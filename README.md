@@ -84,6 +84,11 @@ defaults are just one person's preferences.
 - **Banner text** (`nudge_notification_title`/`body`,
   `block_notification_title`/`body`) — the OS banner that fires
   alongside each tier.
+- **Audio clips** (`nudge_audio_file`, `block_audio_file`,
+  `release_audio_file`) — optional path to an audio file played
+  when each tier fires. Leave empty for no audio on that tier.
+  Great for soundtracking the block with a Closing Time clip, or
+  a little fanfare when your break is registered.
 
 After edits, restart the monitor:
 
@@ -151,3 +156,11 @@ CLAUDE.md              — setup runbook for a Claude Code agent
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Credits
+
+Default audio clips are trimmed excerpts used under the
+[Pixabay Content License](https://pixabay.com/service/license-summary/):
+
+- `assets/block.mp3` — *FPS Metal Doom* by [Alec_Koff](https://pixabay.com/users/alec_koff-29253337/)
+- `assets/release.mp3` — *Who Are You* by [MondayHopes](https://pixabay.com/users/mondayhopes-37284263/)

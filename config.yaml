@@ -43,3 +43,18 @@ nudge_notification_body:  "{mins} min coding. Stand up, look away, drink water."
 
 block_notification_title: "Claude Code: PAUSED — take a break"
 block_notification_body:  "{mins} min with no break. Claude Code is paused until {idle_min} min idle."
+
+# --- Audio clips --------------------------------------------------------
+# Optional audio played when each tier fires, on top of the banner's
+# system alert sound. Leave empty to keep that tier silent. Paths can
+# be absolute or relative to the repo root. macOS plays via `afplay`;
+# Linux via `paplay` or `aplay`. Runs in the background so the monitor
+# loop isn't blocked.
+#
+# Examples:
+#   block_audio_file: "/Users/you/Music/closing_time.mp3"
+#   release_audio_file: "assets/fanfare.wav"
+
+nudge_audio_file: ""
+block_audio_file: "assets/block.mp3"
+release_audio_file: "assets/release.mp3"

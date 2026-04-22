@@ -124,6 +124,24 @@ send_notification() {
   fi
 }
 
+play_audio() {
+  # Fire-and-forget audio clip. Called at tier transitions alongside
+  # the OS banner so the user gets an unmissable "heads up, thing
+  # just happened" signal. Empty path is the off switch. Path can
+  # be absolute or relative to the repo root.
+  local path="$1"
+  [[ -z "$path" ]] && return 0
+  [[ "$path" = /* ]] || path="$ROOT/$path"
+  [[ -f "$path" ]] || { plog "audio file not found: $path"; return 0; }
+  if command -v afplay >/dev/null 2>&1; then
+    afplay "$path" >/dev/null 2>&1 &
+  elif command -v paplay >/dev/null 2>&1; then
+    paplay "$path" >/dev/null 2>&1 &
+  elif command -v aplay >/dev/null 2>&1; then
+    aplay "$path" >/dev/null 2>&1 &
+  fi
+}
+
 notify() {
   # All break-monitor notifications pass urgency=urgent so they pierce
   # Do Not Disturb / Focus modes. The whole point of this tool is to
@@ -133,6 +151,7 @@ notify() {
   title=$(render_template "$(yaml_get "${tier}_notification_title")" "$mins")
   body=$(render_template  "$(yaml_get "${tier}_notification_body")"  "$mins")
   send_notification "$title" "$body" urgent
+  play_audio "$(yaml_get "${tier}_audio_file")"
 }
 
 write_nudge() {
@@ -194,6 +213,7 @@ while true; do
     if (( prior_streak >= NUDGE_THRESHOLD )); then
       last_release=$now
       send_notification "Claude Code: break registered" "Manual reset. You're unblocked." urgent
+      play_audio "$(yaml_get release_audio_file)"
     fi
     streak_start=$now
     last_event=$now
@@ -216,6 +236,7 @@ while true; do
           last_release=$now
           slog "release prior_streak_min=$(( streak_len / 60 ))"
           send_notification "Claude Code: break registered" "You're unblocked. Welcome back." urgent
+          play_audio "$(yaml_get release_audio_file)"
         fi
       fi
       streak_start=$latest

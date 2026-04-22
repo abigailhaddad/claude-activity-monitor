@@ -166,6 +166,9 @@ Everything user-visible lives in `config.yaml`:
   `{mins}`, `{idle_min}`, `{nudge_min}`.
 - OS notification title/body (`nudge_notification_*`,
   `block_notification_*`).
+- Optional audio clips per tier (`nudge_audio_file`,
+  `block_audio_file`, `release_audio_file`) — empty = silent.
+  Played via `afplay` / `paplay` / `aplay` in the background.
 
 After editing, restart the monitor so it picks up changes:
 
