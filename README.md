@@ -1,5 +1,7 @@
 # claude-activity-monitor
 
+[![tests](https://github.com/abigailhaddad/claude-activity-monitor/actions/workflows/tests.yml/badge.svg)](https://github.com/abigailhaddad/claude-activity-monitor/actions/workflows/tests.yml)
+
 ![The monitor watched, the monitor waited. The monitor's patience has fully deflated. Two hours of coding, no break in between — now close the laptop. Go touch something green.](docs/screenshots/block.jpg)
 
 Makes Claude Code refuse your prompts after you've been at it too
@@ -119,6 +121,17 @@ poll and sets your streak back to zero. The hook also ignores
 `nudge.txt` if it's more than 3 minutes stale, so a crashed monitor
 won't leave you permanently blocked.
 
+## Uninstall
+
+```sh
+./uninstall.sh
+```
+
+Stops the daemon, removes the launchd/systemd unit, and strips the
+hook + statusLine entries from `~/.claude/settings.json` (only if
+the statusLine still points at ours). The repo directory itself is
+left alone — `rm -rf` it if you want it gone entirely.
+
 ## Files
 
 ```
@@ -127,9 +140,11 @@ monitor.sh             — background daemon
 hook.sh                — UserPromptSubmit hook
 statusline.sh          — Claude Code statusLine widget (current streak)
 install.sh             — one-shot setup
+uninstall.sh           — removes the daemon + hook + statusLine
 data/                  — runtime state (gitignored)
 stats/activity.log     — history of nudges and break_end events
 stats/nudge.txt        — current tier message (empty when inactive)
+tests/                 — shell test suite (bash tests/run.sh)
 CLAUDE.md              — setup runbook for a Claude Code agent
 ```
 

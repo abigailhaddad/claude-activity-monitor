@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Removes everything install.sh put in place: launchd/systemd unit,
+# the UserPromptSubmit hook, and (only if it's still ours) the
+# statusLine entry in ~/.claude/settings.json. Leaves config.yaml,
+# state.json, and the repo itself alone — delete the repo manually
+# if you want a full cleanup.
+#
+# Safe to re-run.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+HOOK="$ROOT/hook.sh"
+STATUSLINE="$ROOT/statusline.sh"
+MONITOR="$ROOT/monitor.sh"
+SETTINGS="$HOME/.claude/settings.json"
+
+echo "Uninstalling claude-activity-monitor"
+
+# --- Stop and remove the background daemon -----------------------------
+case "$(uname)" in
+  Darwin)
+    PLIST="$HOME/Library/LaunchAgents/com.user.claude-activity-monitor.plist"
+    if [[ -f "$PLIST" ]]; then
+      launchctl unload "$PLIST" 2>/dev/null || true
+      rm -f "$PLIST"
+      echo "  ✓ launchd agent removed ($PLIST)"
+    else
+      echo "  · no launchd agent to remove"
+    fi
+    ;;
+  Linux)
+    UNIT="$HOME/.config/systemd/user/claude-activity-monitor.service"
+    if [[ -f "$UNIT" ]]; then
+      systemctl --user stop    claude-activity-monitor.service 2>/dev/null || true
+      systemctl --user disable claude-activity-monitor.service 2>/dev/null || true
+      rm -f "$UNIT"
+      systemctl --user daemon-reload 2>/dev/null || true
+      echo "  ✓ systemd user unit removed ($UNIT)"
+    else
+      echo "  · no systemd unit to remove"
+    fi
+    ;;
+esac
+
+# Kill any still-running monitor process (e.g. one started manually).
+if pgrep -f "$MONITOR" >/dev/null 2>&1; then
+  pkill -f "$MONITOR" 2>/dev/null || true
+  echo "  ✓ running monitor process killed"
+fi
+
+# --- Settings.json surgery ---------------------------------------------
+if [[ -f "$SETTINGS" ]]; then
+  command -v jq >/dev/null || { echo "error: jq is required to edit $SETTINGS" >&2; exit 1; }
+
+  # Remove our hook entry, dropping now-empty hook groups + sections.
+  tmp=$(mktemp)
+  jq --arg cmd "$HOOK" '
+    if .hooks.UserPromptSubmit then
+      .hooks.UserPromptSubmit |= (
+        map(.hooks |= map(select(.command != $cmd))
+            | select(.hooks | length > 0))
+      )
+      | if .hooks.UserPromptSubmit == [] then del(.hooks.UserPromptSubmit) else . end
+      | if .hooks == {} then del(.hooks) else . end
+    else . end
+  ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+  echo "  ✓ hook removed from $SETTINGS"
+
+  # Remove statusLine only if it still points at ours.
+  existing_sl=$(jq -r '.statusLine.command // empty' "$SETTINGS")
+  if [[ "$existing_sl" == "$STATUSLINE" ]]; then
+    tmp=$(mktemp)
+    jq 'del(.statusLine)' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+    echo "  ✓ statusline entry removed"
+  elif [[ -n "$existing_sl" ]]; then
+    echo "  · statusLine points at $existing_sl (not ours) — leaving it alone"
+  fi
+else
+  echo "  · no $SETTINGS to edit"
+fi
+
+echo
+echo "Done. Your repo directory ($ROOT) is untouched — delete it if you want:"
+echo "  rm -rf \"$ROOT\""

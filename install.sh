@@ -97,6 +97,50 @@ EOF
     ;;
 esac
 
+# --- Post-install smoke checks ------------------------------------------
+# Catch the common "install said OK but nothing actually works" class of
+# bugs. Re-runnable: just re-run install.sh, it's idempotent.
 echo
-echo "Done. Open a new Claude Code session and start prompting — the monitor"
-echo "will track your streak and nudge you at $(sed -nE 's/^nudge_minutes:[[:space:]]*([0-9]+).*/\1/p' "$ROOT/config.yaml") minutes."
+echo "Verifying:"
+fail=0
+
+# Daemon is up. Give launchd/systemd a moment to spawn the process.
+for _ in 1 2 3 4 5; do
+  pgrep -f "$MONITOR" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+if pgrep -f "$MONITOR" >/dev/null 2>&1; then
+  echo "  ✓ monitor is running"
+else
+  echo "  ✗ monitor is NOT running — try: nohup $MONITOR >/dev/null 2>&1 & disown"
+  fail=1
+fi
+
+# Hook is in settings.json.
+if jq -e --arg cmd "$HOOK" \
+  'any(.hooks.UserPromptSubmit[]?; .hooks[]?.command == $cmd)' \
+  "$SETTINGS" >/dev/null; then
+  echo "  ✓ hook registered in $SETTINGS"
+else
+  echo "  ✗ hook NOT registered in $SETTINGS"
+  fail=1
+fi
+
+# Statusline produces output.
+sl_out=$(bash "$STATUSLINE" </dev/null 2>&1 || true)
+if [[ -n "$sl_out" ]]; then
+  echo "  ✓ statusline renders: $sl_out"
+else
+  echo "  ✗ statusline produced no output — check $STATUSLINE"
+  fail=1
+fi
+
+echo
+if (( fail == 0 )); then
+  echo "All checks passed. Open a new Claude Code session and start prompting —"
+  echo "nudge fires at $(sed -nE 's/^nudge_minutes:[[:space:]]*([0-9]+).*/\1/p' "$ROOT/config.yaml") minutes (edit config.yaml to change)."
+else
+  echo "Some checks failed — see above. Re-run ./install.sh after fixing,"
+  echo "or ./uninstall.sh to back out."
+  exit 1
+fi

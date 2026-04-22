@@ -181,6 +181,9 @@ monitor.sh                  — background daemon
 hook.sh                     — Claude Code UserPromptSubmit hook
 statusline.sh               — Claude Code statusLine widget (current streak)
 install.sh                  — one-shot installer (hook + statusline + daemon)
+uninstall.sh                — removes launchd/systemd unit, hook, statusLine
+tests/                      — shell test suite (bash tests/run.sh)
+.github/workflows/tests.yml — CI running the test suite on push/PR
 data/state.json             — current streak state (gitignored)
 data/monitor.log            — private debug log (gitignored)
 stats/nudge.txt             — current tier message (empty when inactive)
