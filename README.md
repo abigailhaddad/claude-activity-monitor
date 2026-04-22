@@ -101,10 +101,12 @@ systemctl --user restart claude-activity-monitor                       # Linux
 
 ## How it works
 
-- `hook.sh` runs on every `UserPromptSubmit`. It (a) touches
-  `data/last_prompt.ts` — the monitor's activity signal — and (b)
+- `hook.sh` runs on `UserPromptSubmit` *and* `Stop` (response-end).
+  Both events update `data/last_prompt.ts` — the monitor's activity
+  signal — so mid-response interjections and long tool runs still
+  count as engagement. On `UserPromptSubmit` only, the hook also
   reads `stats/active.txt` to either inject the reminder as context
-  (nudge tier) or exit 2 to refuse the prompt (block tier). It also
+  (nudge tier) or exit 2 to refuse the prompt (block tier), and
   fires an OS banner at each tier.
 - `monitor.sh` polls every 30 seconds. It reads the mtime of
   `data/last_prompt.ts`, advances the streak, and writes the

@@ -53,19 +53,23 @@ fi
 if [[ -f "$SETTINGS" ]]; then
   command -v jq >/dev/null || { echo "error: jq is required to edit $SETTINGS" >&2; exit 1; }
 
-  # Remove our hook entry, dropping now-empty hook groups + sections.
+  # Remove our hook entry from every event section it's in
+  # (UserPromptSubmit + Stop), dropping now-empty groups + sections.
   tmp=$(mktemp)
   jq --arg cmd "$HOOK" '
-    if .hooks.UserPromptSubmit then
-      .hooks.UserPromptSubmit |= (
-        map(.hooks |= map(select(.command != $cmd))
-            | select(.hooks | length > 0))
-      )
-      | if .hooks.UserPromptSubmit == [] then del(.hooks.UserPromptSubmit) else . end
-      | if .hooks == {} then del(.hooks) else . end
-    else . end
+    def strip(event):
+      if .hooks[event] then
+        .hooks[event] |= (
+          map(.hooks |= map(select(.command != $cmd))
+              | select(.hooks | length > 0))
+        )
+        | if .hooks[event] == [] then del(.hooks[event]) else . end
+      else . end;
+    strip("UserPromptSubmit")
+    | strip("Stop")
+    | if .hooks == {} then del(.hooks) else . end
   ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-  echo "  ✓ hook removed from $SETTINGS"
+  echo "  ✓ hooks removed from $SETTINGS"
 
   # Remove statusLine only if it still points at ours.
   existing_sl=$(jq -r '.statusLine.command // empty' "$SETTINGS")
