@@ -23,11 +23,11 @@ agent) to install it on their machine. This file is the runbook.
   prompts.
 - The monitor writes tiered nudges into `stats/nudge.txt` once the
   streak crosses each threshold, and fires an OS banner at the
-  transition. Thresholds default to 60 / 90 / 120 min in shipping
-  config (editable).
+  transition. Threshold *values* live in `config.yaml` — do not
+  quote specific minute numbers anywhere else, they will drift.
 - The hard-block lifts once no prompts have been submitted for
-  `idle_threshold_minutes` (default 10) — the monitor's next poll
-  will register that as a real break.
+  `idle_threshold_minutes` — the monitor's next poll registers
+  that as a real break.
 - The user can force an immediate reset with `rm stats/nudge.txt`.
   The monitor sees the deletion on its next poll and treats it as
   "I'm taking a break now": streak_start is set to now, and a
@@ -141,16 +141,16 @@ After install, tell the user:
 Open a new Claude Code session. Check:
 
 ```
-./statusline.sh </dev/null       # should print e.g. "3m since break · nudge in 27m · blocked in 57m"
+./statusline.sh </dev/null       # should print e.g. "3m since break · blocked in Xm"
 pgrep -fl monitor.sh             # should show the running process
 tail -f stats/activity.log       # watch nudge/break_end events
 cat data/state.json              # current streak state
 ```
 
-To force-test the nudge path without waiting 30 min, temporarily set
-`streak_limit_minutes: 1` in `config.yaml`, restart the monitor, wait
-90 seconds, send a prompt — Claude should open with a poem. Reset
-afterward.
+To force-test the nudge path without waiting on real thresholds,
+temporarily set `streak_limit_minutes: 1` in `config.yaml`, restart
+the monitor, wait 90 seconds, send a prompt — Claude should open
+with a poem. Reset afterward.
 
 ## Configuration
 
@@ -197,8 +197,11 @@ stats/activity.log          — break/nudge event history (shareable)
 - Block across sessions relies on Claude Code reading the same
   `settings.json` hook in every session. Do not register the hook
   per-project — it must be global.
-- On macOS, the AppleScript call to get the frontmost app needs
-  Accessibility permission for the terminal. If the user hasn't
-  granted it, `frontmost_app` returns empty and the filter defaults to
-  "count any input" — safe fallback, but the email/Slack exclusion
-  won't work until they grant it.
+- On macOS, the OS banner uses `osascript` by default, which routes
+  through Script Editor and needs notification permission granted
+  once (System Settings → Notifications → Script Editor → Allow,
+  Banners or Alerts). If the user says banners don't appear, have
+  them run `osascript -e 'display notification "test" with title
+  "test"'` — if that shows nothing, the permission is the issue.
+  `terminal-notifier` is a supported fallback but its permission
+  state can silently desync (exit 0, no banner) on some setups.
