@@ -12,7 +12,7 @@ agent) to install it on their machine. This file is the runbook.
 - `hook.sh` is registered globally as a Claude Code `UserPromptSubmit`
   hook in `~/.claude/settings.json`. On every user prompt it (a)
   touches `data/last_prompt.ts` — this is the monitor's activity
-  signal — and (b) reads `stats/nudge.txt` and either injects it as
+  signal — and (b) reads `stats/active.txt` and either injects it as
   context (nudge tier) or exits 2 to refuse the prompt (block
   tier). The hook also fires a small OS banner at each tier so the
   nudge is visible outside the chat.
@@ -21,14 +21,14 @@ agent) to install it on their machine. This file is the runbook.
   movement, typing outside Claude Code, background agents, and
   Claude's own tool use do NOT count — only real user prompts.
 - Two tiers: `nudge` and `block`. The monitor writes the active
-  tier into `stats/nudge.txt` once the streak crosses each
+  tier into `stats/active.txt` once the streak crosses each
   threshold, and fires an OS banner at the transition. Threshold
   *values* live in `config.yaml` — do not quote specific minute
   numbers anywhere else, they will drift.
 - The block lifts once no prompts have been submitted for
   `idle_threshold_minutes` — the monitor's next poll registers
   that as a real break.
-- The user can force an immediate reset with `rm stats/nudge.txt`.
+- The user can force an immediate reset with `rm stats/active.txt`.
   The monitor sees the deletion on its next poll and treats it as
   "I'm taking a break now": streak_start is set to now, and a
   release notification fires if the prior streak was past the
@@ -133,7 +133,7 @@ After install, tell the user:
   Claude's own tool use do NOT count.
 - **To customize** — edit `config.yaml` and restart the monitor.
   Thresholds, poem instructions, and notification text live there.
-- **Manual reset:** `rm stats/nudge.txt`. The monitor detects this
+- **Manual reset:** `rm stats/active.txt`. The monitor detects this
   on its next poll and sets `streak_start` to now — statusline flips
   back to "0m since break", and a release notification fires if the
   prior streak was long enough to matter.
@@ -147,6 +147,7 @@ Open a new Claude Code session. Check:
 pgrep -fl monitor.sh             # should show the running process
 tail -f stats/activity.log       # watch nudge/break_end events
 cat data/state.json              # current streak state
+cat stats/active.txt             # current active tier + message (empty when inactive)
 ```
 
 To force-test the nudge path without waiting on real thresholds,
@@ -189,7 +190,7 @@ tests/                      — shell test suite (bash tests/run.sh)
 .github/workflows/tests.yml — CI running the test suite on push/PR
 data/state.json             — current streak state (gitignored)
 data/monitor.log            — private debug log (gitignored)
-stats/nudge.txt             — current tier message (empty when inactive)
+stats/active.txt            — current tier message (empty when inactive)
 stats/activity.log          — break/nudge event history (shareable)
 ```
 
@@ -200,9 +201,9 @@ stats/activity.log          — break/nudge event history (shareable)
   in a different terminal tab do NOT count as activity. Background
   `/loop` or agents do nothing on their own — the monitor is
   watching *you* prompting Claude, not the machine.
-- If the monitor dies, `stats/nudge.txt` goes stale. `hook.sh` ignores
-  nudges older than 180s, so a dead monitor does not permanently lock
-  the user out. Manual escape: `rm stats/nudge.txt`.
+- If the monitor dies, `stats/active.txt` goes stale. `hook.sh` ignores
+  tiers older than 180s, so a dead monitor does not permanently lock
+  the user out. Manual escape: `rm stats/active.txt`.
 - Block across sessions relies on Claude Code reading the same
   `settings.json` hook in every session. Do not register the hook
   per-project — it must be global.

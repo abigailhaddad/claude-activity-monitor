@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test statusline.sh output at each tier by fabricating state.json and
-# nudge.txt in a temp repo layout.
+# active.txt in a temp repo layout.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,10 +29,10 @@ write_state() {
 }
 write_nudge() {
   local tier=$1
-  printf 'TIER=%s\nbody\n' "$tier" > "$TMP/stats/nudge.txt"
-  touch "$TMP/stats/nudge.txt"   # fresh mtime
+  printf 'TIER=%s\nbody\n' "$tier" > "$TMP/stats/active.txt"
+  touch "$TMP/stats/active.txt"   # fresh mtime
 }
-clear_nudge() { : > "$TMP/stats/nudge.txt"; }
+clear_nudge() { : > "$TMP/stats/active.txt"; }
 
 run_sl() { bash "$TMP/statusline.sh" </dev/null; }
 

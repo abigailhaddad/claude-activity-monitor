@@ -6,13 +6,14 @@
 # autonomous loops, and Claude's own tool use do not).
 #
 #   private (gitignored)  -> data/state.json, data/monitor.log, data/last_prompt.ts
-#   shareable (committed) -> stats/activity.log, stats/nudge.txt
+#   shareable (committed) -> stats/activity.log, stats/active.txt
 #
-# stats/nudge.txt is read by the Claude Code hook (hook.sh) on every
-# user prompt; when non-empty, its contents get injected as context so
-# Claude knows to tell the user to take a break. If the user manually
-# deletes stats/nudge.txt the monitor interprets that as "I'm taking a
-# break now, reset" and sets streak_start to now on the next poll.
+# stats/active.txt holds the currently-active tier (nudge or block) and
+# its message body. It's read by the Claude Code hook (hook.sh) on every
+# user prompt; when non-empty, its contents get injected as context or
+# refuse the prompt outright. If the user manually deletes
+# stats/active.txt the monitor interprets that as "I'm taking a break
+# now, reset" and sets streak_start to now on the next poll.
 
 set -u
 
@@ -25,7 +26,7 @@ mkdir -p "$DATA_DIR" "$STATS_DIR"
 STATE_FILE="$DATA_DIR/state.json"
 PRIVATE_LOG="$DATA_DIR/monitor.log"
 PUBLIC_LOG="$STATS_DIR/activity.log"
-NUDGE_FILE="$STATS_DIR/nudge.txt"
+ACTIVE_FILE="$STATS_DIR/active.txt"
 LAST_PROMPT_FILE="$DATA_DIR/last_prompt.ts"
 
 # Minimal YAML reader. Supports three forms for a top-level key:
@@ -165,10 +166,10 @@ write_nudge() {
   {
     printf 'TIER=%s\n' "$tier"
     printf '%s\n' "$body"
-  } > "$NUDGE_FILE"
+  } > "$ACTIVE_FILE"
 }
 
-clear_nudge() { : > "$NUDGE_FILE"; }
+clear_nudge() { : > "$ACTIVE_FILE"; }
 
 read_state() {
   if [[ -f "$STATE_FILE" ]]; then cat "$STATE_FILE"
@@ -176,18 +177,18 @@ read_state() {
   fi
 }
 
-# last_tier is the most recent tier the monitor wrote to nudge.txt
-# ("nudge"/"block", or "" if nudge was cleared). Lets the loop
-# distinguish "monitor cleared nudge" (we set last_tier="") from
-# "user manually deleted nudge to request a reset" (last_tier still
-# non-empty but nudge.txt is gone).
+# last_tier is the most recent tier the monitor wrote to active.txt
+# ("nudge"/"block", or "" if the file was cleared). Lets the loop
+# distinguish "monitor cleared the active tier" (we set last_tier="")
+# from "user manually deleted active.txt to request a reset"
+# (last_tier still non-empty but active.txt is gone).
 write_state() {
   printf '{"last_event":%s,"streak_start":%s,"last_notified":%s,"last_release":%s,"last_tier":"%s"}\n' \
     "$1" "$2" "$3" "$4" "$5" > "$STATE_FILE"
 }
 
 plog "monitor started (pid=$$, nudge=${NUDGE_THRESHOLD}s, block=${BLOCK_THRESHOLD}s, idle=${IDLE_THRESHOLD}s, poll=${POLL_INTERVAL}s)"
-[[ -f "$NUDGE_FILE" ]] || clear_nudge
+[[ -f "$ACTIVE_FILE" ]] || clear_nudge
 
 while true; do
   now=$(date +%s)
@@ -210,13 +211,13 @@ while true; do
   [[ "$last_notified" =~ ^[0-9]+$ ]] || last_notified=0
   [[ "$last_release"  =~ ^[0-9]+$ ]] || last_release=0
 
-  # Manual reset: user deleted/emptied nudge.txt while the monitor
+  # Manual reset: user deleted/emptied active.txt while the monitor
   # believed a nudge was in effect. Treat as "I'm taking a break now"
   # — clear the streak, fire a release notification if the prior
   # streak was significant, and skip the rest of this poll.
-  nudge_empty=0
-  [[ ! -s "$NUDGE_FILE" ]] && nudge_empty=1
-  if [[ -n "$last_tier" ]] && (( nudge_empty == 1 )); then
+  active_empty=0
+  [[ ! -s "$ACTIVE_FILE" ]] && active_empty=1
+  if [[ -n "$last_tier" ]] && (( active_empty == 1 )); then
     prior_streak=$(( last_event - streak_start ))
     (( prior_streak < 0 )) && prior_streak=0
     slog "manual_reset prior_streak_min=$(( prior_streak / 60 )) prior_tier=${last_tier}"
