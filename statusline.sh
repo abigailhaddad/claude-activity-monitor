@@ -98,7 +98,7 @@ fi
 
 # Two display modes, keyed off of whether the user is currently idle
 # AND has a tier active (i.e. a streak worth breaking from):
-#   - coding: "Nm since break · blocked in Xm" (or "BLOCKED · take a break")
+#   - coding: "Nm since break · blocked in Xm" (or "BLOCKED · break: Xm left")
 #   - break:  "break: Xm left" — only meaningful once a nudge / block
 #             is in effect, since that's when the idle countdown actually
 #             does something (clears the nudge or unblocks). Pre-nudge

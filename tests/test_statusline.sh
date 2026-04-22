@@ -90,12 +90,14 @@ out=$(run_sl)
 assert_contains "$out" "65m since break" "coding+nudge: streak shown"
 assert_contains "$out" "blocked in 55m" "coding+nudge: block countdown"
 
-# Block tier + coding mode: "BLOCKED · take a break".
+# Block tier + coding mode: "BLOCKED · break: Xm left" — the idle
+# countdown is shown even mid-coding so the user sees how long the
+# block has left without switching modes.
 write_state_coding 130
 write_nudge block
 out=$(run_sl)
 assert_contains "$out" "BLOCKED" "coding+block: BLOCKED label"
-assert_contains "$out" "take a break" "coding+block: action prompt"
+assert_contains "$out" "break:" "coding+block: idle countdown shown"
 
 # Break mode only activates when a tier is active. 65m streak + nudge
 # tier + 3m idle → "break: 7m left" (counting down toward nudge clear).
