@@ -103,11 +103,29 @@ out=$(run_sl)
 assert_contains "$out" "BLOCKED" "coding+hard_block: BLOCKED label"
 assert_contains "$out" "take a break" "coding+hard_block: action prompt"
 
-# Break mode (idle > 0), pre-block: "break: Xm left" (remaining idle time).
-write_state_break 30 3   # 30m streak, 3m idle
+# Break mode only activates when a tier is active. 65m streak + gentle
+# nudge + 3m idle → "break: 7m left" (counting down toward nudge clear).
+write_state_break 65 3   # 65m streak, 3m idle
+write_nudge gentle
+out=$(run_sl)
+assert_contains "$out" "break: 7m left" "break mode at gentle tier: countdown remaining"
+
+# Pre-nudge idle stays in coding mode (no tier → no break countdown).
+# A freshly-reset streak must not flip into "break: 9m left" the moment
+# the user pauses to read Claude's output.
+write_state_break 30 3
 clear_nudge
 out=$(run_sl)
-assert_contains "$out" "break: 7m left" "break mode: countdown remaining"
+assert_contains "$out" "since break" "pre-nudge idle: stays in coding mode"
+[[ "$out" == *"break:"*"left"* ]] && {
+  FAIL=$((FAIL + 1))
+  FAILED_TESTS+=("pre-nudge idle: should NOT show break countdown")
+  echo "  ✗ pre-nudge idle: should NOT show break countdown"
+  echo "    got: $out"
+} || {
+  PASS=$((PASS + 1))
+  echo "  ✓ pre-nudge idle: break countdown suppressed"
+}
 
 # Break mode + hard_block: "BLOCKED · break: Xm left".
 write_state_break 130 4  # 130m streak, 4m idle
@@ -117,9 +135,10 @@ assert_contains "$out" "BLOCKED" "break+hard_block: BLOCKED label"
 assert_contains "$out" "break: 6m left" "break+hard_block: countdown remaining"
 
 # Idle past threshold but monitor hasn't reset yet (transient):
-# should show "done, resetting" not "0m left".
-write_state_break 30 15  # 30m streak, 15m idle (capped to 10m)
-clear_nudge
+# should show "done, resetting" not "0m left". Needs an active tier
+# since break mode is tier-gated now.
+write_state_break 65 15  # 65m streak, 15m idle (capped to 10m)
+write_nudge gentle
 out=$(run_sl)
 assert_contains "$out" "done, resetting" "break past threshold: done-marker not 0m"
 

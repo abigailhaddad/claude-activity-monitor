@@ -89,17 +89,18 @@ if [[ -z "$tier" ]]; then
   fi
 fi
 
-# Two display modes, keyed off of whether the user is currently idle:
-#   - coding (idle_min == 0) → "Nm since break · blocked in Xm"
-#   - break  (idle_min  > 0) → "break: Xm left" (counts down; resets to
-#                                coding mode when they type)
-# The break-mode countdown is the visible feedback the user asked for:
-# typing during a break restarts the idle clock, and they see it jump
-# back to coding mode within a monitor poll (~30s).
+# Two display modes, keyed off of whether the user is currently idle
+# AND has a tier active (i.e. a streak worth breaking from):
+#   - coding: "Nm since break · blocked in Xm" (or "BLOCKED · take a break")
+#   - break:  "break: Xm left" — only meaningful once a nudge / block
+#             is in effect, since that's when the idle countdown actually
+#             does something (clears the nudge or unblocks). Pre-nudge
+#             pauses stay in coding mode so a freshly-reset streak
+#             doesn't immediately flip into "break: 9m left".
 blocked_in=$(( hard > mins ? hard - mins : 0 ))
 break_left=$(( idle > idle_min ? idle - idle_min : 0 ))
 
-if (( idle_min > 0 )); then
+if (( idle_min > 0 )) && [[ -n "$tier" ]]; then
   # break_left == 0 is a transient "idle past threshold, monitor is
   # about to reset the streak" state (<30s window). Label it as done
   # rather than "0m left" which reads like no progress.
