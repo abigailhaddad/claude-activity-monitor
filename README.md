@@ -103,7 +103,7 @@ systemctl --user restart claude-activity-monitor                       # Linux
 
 - `hook.sh` runs on every `UserPromptSubmit`. It (a) touches
   `data/last_prompt.ts` — the monitor's activity signal — and (b)
-  reads `stats/nudge.txt` to either inject the reminder as context
+  reads `stats/active.txt` to either inject the reminder as context
   (nudge tier) or exit 2 to refuse the prompt (block tier). It also
   fires an OS banner at each tier.
 - `monitor.sh` polls every 30 seconds. It reads the mtime of
@@ -119,13 +119,13 @@ systemctl --user restart claude-activity-monitor                       # Linux
 ## Locked out, or want to reset manually
 
 ```sh
-rm stats/nudge.txt
+rm stats/active.txt
 ```
 
 This is also the hand-wave for "I know, I'm taking a break right
 now, reset the clock." The monitor sees the deletion on its next
 poll and sets your streak back to zero. The hook also ignores
-`nudge.txt` if it's more than 3 minutes stale, so a crashed monitor
+`active.txt` if it's more than 3 minutes stale, so a crashed monitor
 won't leave you permanently blocked.
 
 ## Uninstall
@@ -150,7 +150,7 @@ install.sh             — one-shot setup
 uninstall.sh           — removes the daemon + hook + statusLine
 data/                  — runtime state (gitignored)
 stats/activity.log     — history of nudges and break_end events
-stats/nudge.txt        — current tier message (empty when inactive)
+stats/active.txt       — current tier message (empty when inactive)
 tests/                 — shell test suite (bash tests/run.sh)
 CLAUDE.md              — setup runbook for a Claude Code agent
 ```

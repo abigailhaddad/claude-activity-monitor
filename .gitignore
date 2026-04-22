@@ -1,5 +1,5 @@
 data/
 stats/activity.log
-stats/nudge.txt
+stats/active.txt
 .DS_Store
 *.bak-*

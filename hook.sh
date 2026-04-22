@@ -3,15 +3,15 @@
 #   1. Touch data/last_prompt.ts — the monitor's canonical activity
 #      signal. Every UserPromptSubmit extends the streak; anything
 #      else (mouse, typing outside Claude, background agents) does not.
-#   2. Read stats/nudge.txt and either inject it as context
+#   2. Read stats/active.txt and either inject it as context
 #      (nudge tier) or refuse the prompt with exit 2 (block tier).
 #      Also fires an OS banner so the nudge is visible, not just
 #      present in Claude's response body.
-# Silent when no nudge is active or when the monitor hasn't touched
+# Silent when no tier is active or when the monitor hasn't touched
 # the file in STALE_SECONDS (treated as dead daemon).
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-NUDGE_FILE="$ROOT/stats/nudge.txt"
+ACTIVE_FILE="$ROOT/stats/active.txt"
 LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 STALE_SECONDS=180
 
@@ -35,14 +35,14 @@ banner() {
   fi
 }
 
-[[ -s "$NUDGE_FILE" ]] || exit 0
+[[ -s "$ACTIVE_FILE" ]] || exit 0
 
 now=$(date +%s)
-mtime=$(stat -c %Y "$NUDGE_FILE" 2>/dev/null || stat -f %m "$NUDGE_FILE" 2>/dev/null || echo 0)
+mtime=$(stat -c %Y "$ACTIVE_FILE" 2>/dev/null || stat -f %m "$ACTIVE_FILE" 2>/dev/null || echo 0)
 (( now - mtime > STALE_SECONDS )) && exit 0
 
-tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
-body=$(tail -n +2 "$NUDGE_FILE")
+tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
+body=$(tail -n +2 "$ACTIVE_FILE")
 
 case "$tier" in
   nudge) banner "Break nudge" "Stand up, stretch, look away." Glass ;;

@@ -13,7 +13,7 @@ cat >/dev/null
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 STATE="$ROOT/data/state.json"
 CONFIG="$ROOT/config.yaml"
-NUDGE_FILE="$ROOT/stats/nudge.txt"
+ACTIVE_FILE="$ROOT/stats/active.txt"
 LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 
 mtime() {
@@ -76,15 +76,15 @@ if [[ -n "$last_event" && "$last_event" != "0" ]]; then
   (( idle_min > idle )) && idle_min=$idle
 fi
 
-# Determine tier. Prefer nudge.txt (source of truth for what hook.sh
+# Determine tier. Prefer active.txt (source of truth for what hook.sh
 # will do on the next prompt), but fall back to streak math when
-# nudge.txt is empty — it's empty while you're currently idle, but
+# active.txt is empty — it's empty while you're currently idle, but
 # the streak hasn't reset yet, so we need to infer the tier ourselves
 # to keep the statusline consistent with what the hook will actually do.
 tier=""
-if [[ -s "$NUDGE_FILE" ]]; then
-  nudge_age=$(( now - $(mtime "$NUDGE_FILE") ))
-  (( nudge_age < 180 )) && tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
+if [[ -s "$ACTIVE_FILE" ]]; then
+  active_age=$(( now - $(mtime "$ACTIVE_FILE") ))
+  (( active_age < 180 )) && tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
 fi
 if [[ -z "$tier" ]]; then
   if   (( mins >= block_at )); then tier=block
