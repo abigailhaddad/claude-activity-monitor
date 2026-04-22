@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # One-shot installer: registers hook.sh as a UserPromptSubmit hook in
-# ~/.claude/settings.json (idempotent — won't duplicate) and, on macOS,
-# installs a launchd plist so monitor.sh starts at login.
+# ~/.claude/settings.json (idempotent — won't duplicate) and installs
+# a launchd plist so monitor.sh starts at login.
 #
-# Safe to re-run. Prints what it did; prompts before overwriting.
+# Safe to re-run. macOS only.
 
 set -euo pipefail
+
+[[ "$(uname)" == "Darwin" ]] || {
+  echo "error: macOS only (the menubar widget is a SwiftBar plugin, which is Mac-only)" >&2
+  exit 1
+}
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$ROOT/hook.sh"
@@ -15,7 +20,7 @@ SETTINGS="$HOME/.claude/settings.json"
 
 CONFIG="$ROOT/config.yaml"
 
-command -v jq >/dev/null || { echo "error: jq is required (brew install jq / apt install jq)" >&2; exit 1; }
+command -v jq >/dev/null || { echo "error: jq is required (brew install jq)" >&2; exit 1; }
 chmod +x "$HOOK" "$MONITOR" "$STATUSLINE" 2>/dev/null || true
 
 mkdir -p "$(dirname "$SETTINGS")"
@@ -80,31 +85,50 @@ fi
 
 # --- Hook registration --------------------------------------------------
 # Idempotent: only add if no hook with the same command already exists.
-# We register for two events:
-#   - UserPromptSubmit: fires when the user submits a prompt. Handles
-#     tier injection/refusal and the activity-signal update.
-#   - Stop: fires when the assistant finishes a response. Activity
-#     signal only — catches interjections and long tool runs that
-#     UserPromptSubmit alone misses.
+# We register only UserPromptSubmit. Stop was registered here in an
+# earlier version to catch interjections and long tool runs as
+# "engagement," but treating response-end as activity meant a user
+# who walked away mid-stream never accumulated idle time. Now only
+# actual user prompts count. Also strips any stale Stop entry from a
+# previous install.
 tmp=$(mktemp)
 jq --arg cmd "$HOOK" '
-  def add_hook(event):
-    .hooks[event] //= [] |
-    if any(.hooks[event][]?; .hooks[]?.command == $cmd)
-    then .
-    else .hooks[event] += [{"hooks": [{"type": "command", "command": $cmd}]}]
-    end;
   .hooks //= {}
-  | add_hook("UserPromptSubmit")
-  | add_hook("Stop")
+  | .hooks.UserPromptSubmit //= []
+  | if any(.hooks.UserPromptSubmit[]?; .hooks[]?.command == $cmd) | not
+    then .hooks.UserPromptSubmit += [{"hooks": [{"type": "command", "command": $cmd}]}]
+    else . end
+  | if .hooks.Stop then
+      .hooks.Stop = (.hooks.Stop | map(select(.hooks | any(.command == $cmd) | not)))
+      | if (.hooks.Stop | length) == 0 then del(.hooks.Stop) else . end
+    else . end
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 
-echo "✓ hooks (UserPromptSubmit + Stop) registered in $SETTINGS"
+echo "✓ hook (UserPromptSubmit) registered in $SETTINGS"
 
-# --- Statusline (widget showing current streak) ------------------------
-# Only install if the user doesn't already have a statusLine command.
+# --- Statusline (Claude Code statusLine widget) ------------------------
+# Only install if the user doesn't already have a statusLine and
+# doesn't already have the SwiftBar menubar plugin symlinked. The
+# menubar plugin is the preferred surface (live countdown, always
+# visible) — the Claude Code statusLine is the fallback for folks
+# who don't want to install SwiftBar. If both are active the same
+# number shows up in two places, which is clutter.
+# SwiftBar's plugin folder can be relocated — read the user's
+# choice instead of hard-coding the default. If SwiftBar isn't
+# installed the defaults read fails and we fall back to the default.
+SWIFTBAR_DIR=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null \
+  || echo "$HOME/Library/Application Support/SwiftBar/Plugins")
+SWIFTBAR_PLUGIN="$SWIFTBAR_DIR/claude-activity-monitor.1m.sh"
 existing_sl=$(jq -r '.statusLine.command // empty' "$SETTINGS")
-if [[ -z "$existing_sl" ]]; then
+if [[ -L "$SWIFTBAR_PLUGIN" || -f "$SWIFTBAR_PLUGIN" ]]; then
+  echo "· SwiftBar plugin detected at $SWIFTBAR_PLUGIN — skipping Claude Code statusLine"
+  # Also strip a stale registration from a previous (pre-SwiftBar) install.
+  if [[ "$existing_sl" == "$STATUSLINE" ]]; then
+    tmp=$(mktemp)
+    jq 'del(.statusLine)' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+    echo "  (removed stale .statusLine pointing at our script)"
+  fi
+elif [[ -z "$existing_sl" ]]; then
   tmp=$(mktemp)
   jq --arg cmd "$STATUSLINE" '.statusLine = {"type": "command", "command": $cmd}' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
   echo "✓ statusline widget registered (current streak shown in Claude Code)"
@@ -116,11 +140,19 @@ else
   echo "      .statusLine.command to: $STATUSLINE"
 fi
 
-# --- Background daemon --------------------------------------------------
-case "$(uname)" in
-  Darwin)
-    PLIST="$HOME/Library/LaunchAgents/com.user.claude-activity-monitor.plist"
-    cat > "$PLIST" <<EOF
+# --- Background daemon (launchd) ---------------------------------------
+PLIST="$HOME/Library/LaunchAgents/com.user.claude-activity-monitor.plist"
+# launchd's stdout/stderr paths must live OUTSIDE ~/Documents/ —
+# macOS TCC/sandbox denies xpcproxy read-data on user folders it
+# treats as sensitive (Documents, Desktop, Downloads), which
+# manifests as posix_spawn "Operation not permitted" (exit 78,
+# EX_CONFIG) in system logs. ~/Library/Logs/ is the conventional
+# safe location. The monitor's own plog() log still writes to
+# $ROOT/data/monitor.log — that runs as the user process, not
+# launchd, and isn't subject to the spawn-time sandbox.
+LAUNCHD_LOG="$HOME/Library/Logs/claude-activity-monitor.log"
+mkdir -p "$(dirname "$LAUNCHD_LOG")"
+cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -130,8 +162,8 @@ case "$(uname)" in
     <key>WorkingDirectory</key>         <string>$ROOT</string>
     <key>RunAtLoad</key>                <true/>
     <key>KeepAlive</key>                <true/>
-    <key>StandardOutPath</key>          <string>$ROOT/data/monitor.log</string>
-    <key>StandardErrorPath</key>        <string>$ROOT/data/monitor.log</string>
+    <key>StandardOutPath</key>          <string>$LAUNCHD_LOG</string>
+    <key>StandardErrorPath</key>        <string>$LAUNCHD_LOG</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>                 <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
@@ -139,35 +171,12 @@ case "$(uname)" in
 </dict>
 </plist>
 EOF
-    launchctl unload "$PLIST" 2>/dev/null || true
-    launchctl load   "$PLIST"
-    echo "✓ launchd agent installed ($PLIST) — monitor will run at login"
-    ;;
-  Linux)
-    UNIT="$HOME/.config/systemd/user/claude-activity-monitor.service"
-    mkdir -p "$(dirname "$UNIT")"
-    cat > "$UNIT" <<EOF
-[Unit]
-Description=Claude Code break monitor
-
-[Service]
-Type=simple
-ExecStart=$MONITOR
-WorkingDirectory=$ROOT
-Restart=always
-
-[Install]
-WantedBy=default.target
-EOF
-    systemctl --user daemon-reload
-    systemctl --user enable --now claude-activity-monitor.service
-    echo "✓ systemd user unit installed ($UNIT) — monitor is running"
-    ;;
-  *)
-    echo "note: automatic daemon setup not supported on $(uname); start manually with:"
-    echo "      nohup $MONITOR >/dev/null 2>&1 & disown"
-    ;;
-esac
+# Prefer bootout/bootstrap (modern launchctl) over load/unload
+# (deprecated); old syntax also fails if the service is already in
+# "spawn scheduled" state from a prior EX_CONFIG loop.
+launchctl bootout "gui/$(id -u)/com.user.claude-activity-monitor" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST"
+echo "✓ launchd agent installed ($PLIST) — monitor will run at login"
 
 # --- Post-install smoke checks ------------------------------------------
 # Catch the common "install said OK but nothing actually works" class of
@@ -189,14 +198,13 @@ else
   fail=1
 fi
 
-# Hooks are in settings.json (both events).
+# Hook is in settings.json (UserPromptSubmit only).
 if jq -e --arg cmd "$HOOK" '
     any(.hooks.UserPromptSubmit[]?; .hooks[]?.command == $cmd)
-    and any(.hooks.Stop[]?; .hooks[]?.command == $cmd)
   ' "$SETTINGS" >/dev/null; then
-  echo "  ✓ hooks (UserPromptSubmit + Stop) registered in $SETTINGS"
+  echo "  ✓ hook (UserPromptSubmit) registered in $SETTINGS"
 else
-  echo "  ✗ hooks NOT fully registered in $SETTINGS"
+  echo "  ✗ hook NOT registered in $SETTINGS"
   fail=1
 fi
 

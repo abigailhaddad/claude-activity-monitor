@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Removes everything install.sh put in place: launchd/systemd unit,
-# the UserPromptSubmit hook, and (only if it's still ours) the
-# statusLine entry in ~/.claude/settings.json. Leaves config.yaml,
-# state.json, and the repo itself alone — delete the repo manually
-# if you want a full cleanup.
+# Removes everything install.sh put in place: launchd agent, the
+# UserPromptSubmit hook, the SwiftBar plugin symlink, and (only if
+# it still points at ours) the statusLine entry in
+# ~/.claude/settings.json. Leaves config.yaml, state.json, and the
+# repo itself alone — delete the repo manually for a full cleanup.
 #
 # Safe to re-run.
 
@@ -17,36 +17,32 @@ SETTINGS="$HOME/.claude/settings.json"
 
 echo "Uninstalling claude-activity-monitor"
 
-# --- Stop and remove the background daemon -----------------------------
-case "$(uname)" in
-  Darwin)
-    PLIST="$HOME/Library/LaunchAgents/com.user.claude-activity-monitor.plist"
-    if [[ -f "$PLIST" ]]; then
-      launchctl unload "$PLIST" 2>/dev/null || true
-      rm -f "$PLIST"
-      echo "  ✓ launchd agent removed ($PLIST)"
-    else
-      echo "  · no launchd agent to remove"
-    fi
-    ;;
-  Linux)
-    UNIT="$HOME/.config/systemd/user/claude-activity-monitor.service"
-    if [[ -f "$UNIT" ]]; then
-      systemctl --user stop    claude-activity-monitor.service 2>/dev/null || true
-      systemctl --user disable claude-activity-monitor.service 2>/dev/null || true
-      rm -f "$UNIT"
-      systemctl --user daemon-reload 2>/dev/null || true
-      echo "  ✓ systemd user unit removed ($UNIT)"
-    else
-      echo "  · no systemd unit to remove"
-    fi
-    ;;
-esac
+# --- Stop and remove the launchd agent ---------------------------------
+PLIST="$HOME/Library/LaunchAgents/com.user.claude-activity-monitor.plist"
+if [[ -f "$PLIST" ]]; then
+  launchctl bootout "gui/$(id -u)/com.user.claude-activity-monitor" 2>/dev/null \
+    || launchctl unload "$PLIST" 2>/dev/null || true
+  rm -f "$PLIST"
+  echo "  ✓ launchd agent removed ($PLIST)"
+else
+  echo "  · no launchd agent to remove"
+fi
 
 # Kill any still-running monitor process (e.g. one started manually).
 if pgrep -f "$MONITOR" >/dev/null 2>&1; then
   pkill -f "$MONITOR" 2>/dev/null || true
   echo "  ✓ running monitor process killed"
+fi
+
+# --- SwiftBar plugin symlink -------------------------------------------
+SWIFTBAR_DIR=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null \
+  || echo "$HOME/Library/Application Support/SwiftBar/Plugins")
+SWIFTBAR_PLUGIN="$SWIFTBAR_DIR/claude-activity-monitor.1m.sh"
+if [[ -L "$SWIFTBAR_PLUGIN" ]]; then
+  rm -f "$SWIFTBAR_PLUGIN"
+  echo "  ✓ SwiftBar plugin symlink removed ($SWIFTBAR_PLUGIN)"
+  # Nudge SwiftBar to refresh so the stale item disappears from the menubar.
+  open "swiftbar://refreshallplugins" 2>/dev/null || true
 fi
 
 # --- Settings.json surgery ---------------------------------------------
