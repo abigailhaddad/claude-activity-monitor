@@ -9,13 +9,23 @@ agent) to install it on their machine. This file is the runbook.
 
 ## What it does
 
-- `hook.sh` is registered globally as a Claude Code `UserPromptSubmit`
-  hook in `~/.claude/settings.json`. On every user prompt it (a)
-  touches `data/last_prompt.ts` — this is the monitor's activity
-  signal — and (b) reads `stats/active.txt` and either injects it as
-  context (nudge tier) or exits 2 to refuse the prompt (block
-  tier). The hook also fires a small OS banner at each tier so the
-  nudge is visible outside the chat.
+- `hook.sh` is registered globally as a Claude Code hook in
+  `~/.claude/settings.json` for TWO events: `UserPromptSubmit` and
+  `Stop`. Both fire on `hook.sh`; the script branches on the
+  `hook_event_name` in stdin JSON.
+  - On `UserPromptSubmit`: (a) touches `data/last_prompt.ts` — the
+    monitor's activity signal — and (b) reads `stats/active.txt` and
+    either injects it as context (nudge tier) or exits 2 to refuse the
+    prompt (block tier). Also fires an OS banner at each tier.
+  - On `Stop` (response-end): touches `data/last_prompt.ts` ONLY and
+    exits 0. We deliberately don't run the tier logic here — exit 2
+    on a Stop hook blocks response completion (infinite-loop risk),
+    and injecting a nudge at response-end is redundant with the
+    next UserPromptSubmit's injection.
+  - Why both? `UserPromptSubmit` alone misses mid-response
+    interjections (a message sent while Claude is running a tool
+    doesn't fire it). `Stop` catches those cases by firing at the end
+    of every response, so long tool runs still count as "engaged."
 - `monitor.sh` runs as a background daemon. Every 30s it reads the
   mtime of `data/last_prompt.ts` and updates the streak. Mouse
   movement, typing outside Claude Code, background agents, and
@@ -96,6 +106,9 @@ Edit `~/.claude/settings.json` — add the hook and the statusline:
 {
   "hooks": {
     "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "/absolute/path/to/claude-activity-monitor/hook.sh" } ] }
+    ],
+    "Stop": [
       { "hooks": [ { "type": "command", "command": "/absolute/path/to/claude-activity-monitor/hook.sh" } ] }
     ]
   },

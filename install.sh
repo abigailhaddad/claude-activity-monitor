@@ -80,17 +80,26 @@ fi
 
 # --- Hook registration --------------------------------------------------
 # Idempotent: only add if no hook with the same command already exists.
+# We register for two events:
+#   - UserPromptSubmit: fires when the user submits a prompt. Handles
+#     tier injection/refusal and the activity-signal update.
+#   - Stop: fires when the assistant finishes a response. Activity
+#     signal only — catches interjections and long tool runs that
+#     UserPromptSubmit alone misses.
 tmp=$(mktemp)
 jq --arg cmd "$HOOK" '
-  .hooks //= {} |
-  .hooks.UserPromptSubmit //= [] |
-  if any(.hooks.UserPromptSubmit[]?; .hooks[]?.command == $cmd)
-  then .
-  else .hooks.UserPromptSubmit += [{"hooks": [{"type": "command", "command": $cmd}]}]
-  end
+  def add_hook(event):
+    .hooks[event] //= [] |
+    if any(.hooks[event][]?; .hooks[]?.command == $cmd)
+    then .
+    else .hooks[event] += [{"hooks": [{"type": "command", "command": $cmd}]}]
+    end;
+  .hooks //= {}
+  | add_hook("UserPromptSubmit")
+  | add_hook("Stop")
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 
-echo "✓ hook registered in $SETTINGS"
+echo "✓ hooks (UserPromptSubmit + Stop) registered in $SETTINGS"
 
 # --- Statusline (widget showing current streak) ------------------------
 # Only install if the user doesn't already have a statusLine command.
@@ -180,13 +189,14 @@ else
   fail=1
 fi
 
-# Hook is in settings.json.
-if jq -e --arg cmd "$HOOK" \
-  'any(.hooks.UserPromptSubmit[]?; .hooks[]?.command == $cmd)' \
-  "$SETTINGS" >/dev/null; then
-  echo "  ✓ hook registered in $SETTINGS"
+# Hooks are in settings.json (both events).
+if jq -e --arg cmd "$HOOK" '
+    any(.hooks.UserPromptSubmit[]?; .hooks[]?.command == $cmd)
+    and any(.hooks.Stop[]?; .hooks[]?.command == $cmd)
+  ' "$SETTINGS" >/dev/null; then
+  echo "  ✓ hooks (UserPromptSubmit + Stop) registered in $SETTINGS"
 else
-  echo "  ✗ hook NOT registered in $SETTINGS"
+  echo "  ✗ hooks NOT fully registered in $SETTINGS"
   fail=1
 fi
 
