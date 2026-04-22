@@ -23,36 +23,27 @@ out=$(bash "$TMP/hook.sh" 2>&1); ec=$?
 assert_exit "$ec" "0" "empty nudge: exit 0"
 assert_eq "$out" "" "empty nudge: no output"
 
-# 2. Gentle tier → exit 0, body printed to stdout.
+# 2. Nudge tier → exit 0, body printed to stdout.
 cat > "$NUDGE" <<EOF
-TIER=gentle
+TIER=nudge
 hey take a break for real
 EOF
 out=$(bash "$TMP/hook.sh" 2>/dev/null); ec=$?
-assert_exit "$ec" "0" "gentle nudge: exit 0"
-assert_contains "$out" "take a break" "gentle nudge: body printed"
+assert_exit "$ec" "0" "nudge: exit 0"
+assert_contains "$out" "take a break" "nudge: body printed"
 
-# 3. Firm tier → same behavior (stdout).
+# 3. Block tier → exit 2, body on stderr (refuses the prompt).
 cat > "$NUDGE" <<EOF
-TIER=firm
-firm reminder
-EOF
-out=$(bash "$TMP/hook.sh" 2>/dev/null); ec=$?
-assert_exit "$ec" "0" "firm nudge: exit 0"
-assert_contains "$out" "firm reminder" "firm nudge: body printed"
-
-# 4. Hard block → exit 2, body on stderr (blocks the prompt).
-cat > "$NUDGE" <<EOF
-TIER=hard_block
+TIER=block
 you are blocked, step away
 EOF
 stderr=$(bash "$TMP/hook.sh" 2>&1 >/dev/null); ec=$?
-assert_exit "$ec" "2" "hard_block: exit 2 (prompt refused)"
-assert_contains "$stderr" "you are blocked" "hard_block: body on stderr"
+assert_exit "$ec" "2" "block: exit 2 (prompt refused)"
+assert_contains "$stderr" "you are blocked" "block: body on stderr"
 
-# 5. Stale nudge (mtime > 180s) → ignored, exit 0.
+# 4. Stale nudge (mtime > 180s) → ignored, exit 0.
 cat > "$NUDGE" <<EOF
-TIER=hard_block
+TIER=block
 this is stale and should be ignored
 EOF
 # Backdate the file 5 minutes.

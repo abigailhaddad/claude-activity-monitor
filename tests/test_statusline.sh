@@ -13,9 +13,8 @@ mkdir -p "$TMP/stats" "$TMP/data"
 # Minimal config with known thresholds.
 cat > "$TMP/config.yaml" <<'YAML'
 idle_threshold_minutes: 10
-streak_limit_minutes: 60
-firm_nudge_minutes: 90
-hard_block_minutes: 120
+nudge_minutes: 60
+block_minutes: 120
 YAML
 
 cp "$DIR/../statusline.sh" "$TMP/statusline.sh"
@@ -84,31 +83,26 @@ assert_contains "$out" "blocked in 90m" "coding mode: countdown to block"
 
 # Nudge tier labels are intentionally dropped from statusline — the
 # nudge manifests as poem context in Claude's reply, not as a label
-# here. Gentle/firm in coding mode look identical to pre-nudge.
+# here. Nudge tier in coding mode looks identical to pre-nudge.
 write_state_coding 65
-write_nudge gentle
+write_nudge nudge
 out=$(run_sl)
-assert_contains "$out" "65m since break" "coding+gentle: streak shown"
-assert_contains "$out" "blocked in 55m" "coding+gentle: block countdown"
+assert_contains "$out" "65m since break" "coding+nudge: streak shown"
+assert_contains "$out" "blocked in 55m" "coding+nudge: block countdown"
 
-write_state_coding 100
-write_nudge firm
-out=$(run_sl)
-assert_contains "$out" "blocked in 20m" "coding+firm: block countdown"
-
-# Hard block + coding mode: "BLOCKED · take a break".
+# Block tier + coding mode: "BLOCKED · take a break".
 write_state_coding 130
-write_nudge hard_block
+write_nudge block
 out=$(run_sl)
-assert_contains "$out" "BLOCKED" "coding+hard_block: BLOCKED label"
-assert_contains "$out" "take a break" "coding+hard_block: action prompt"
+assert_contains "$out" "BLOCKED" "coding+block: BLOCKED label"
+assert_contains "$out" "take a break" "coding+block: action prompt"
 
-# Break mode only activates when a tier is active. 65m streak + gentle
-# nudge + 3m idle → "break: 7m left" (counting down toward nudge clear).
+# Break mode only activates when a tier is active. 65m streak + nudge
+# tier + 3m idle → "break: 7m left" (counting down toward nudge clear).
 write_state_break 65 3   # 65m streak, 3m idle
-write_nudge gentle
+write_nudge nudge
 out=$(run_sl)
-assert_contains "$out" "break: 7m left" "break mode at gentle tier: countdown remaining"
+assert_contains "$out" "break: 7m left" "break mode at nudge tier: countdown remaining"
 
 # Pre-nudge idle stays in coding mode (no tier → no break countdown).
 # A freshly-reset streak must not flip into "break: 9m left" the moment
@@ -127,18 +121,18 @@ assert_contains "$out" "since break" "pre-nudge idle: stays in coding mode"
   echo "  ✓ pre-nudge idle: break countdown suppressed"
 }
 
-# Break mode + hard_block: "BLOCKED · break: Xm left".
+# Break mode + block tier: "BLOCKED · break: Xm left".
 write_state_break 130 4  # 130m streak, 4m idle
-write_nudge hard_block
+write_nudge block
 out=$(run_sl)
-assert_contains "$out" "BLOCKED" "break+hard_block: BLOCKED label"
-assert_contains "$out" "break: 6m left" "break+hard_block: countdown remaining"
+assert_contains "$out" "BLOCKED" "break+block: BLOCKED label"
+assert_contains "$out" "break: 6m left" "break+block: countdown remaining"
 
 # Idle past threshold but monitor hasn't reset yet (transient):
 # should show "done, resetting" not "0m left". Needs an active tier
 # since break mode is tier-gated now.
 write_state_break 65 15  # 65m streak, 15m idle (capped to 10m)
-write_nudge gentle
+write_nudge nudge
 out=$(run_sl)
 assert_contains "$out" "done, resetting" "break past threshold: done-marker not 0m"
 
@@ -157,11 +151,11 @@ assert_contains "$out" "since break" "type during break: back to coding mode"
   echo "  ✓ type during break: break countdown hidden"
 }
 
-# Fallback: nudge empty but streak math >= hard.
+# Fallback: nudge empty but streak math >= block threshold.
 write_state 130
 clear_nudge
 out=$(run_sl)
-assert_contains "$out" "BLOCKED" "no nudge + streak past hard: fallback to BLOCKED"
+assert_contains "$out" "BLOCKED" "no nudge + streak past block: fallback to BLOCKED"
 
 # Release banner: last_release > last_prompt, shown before next prompt.
 release_ts=$now

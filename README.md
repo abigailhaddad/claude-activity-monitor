@@ -1,21 +1,20 @@
 # claude-activity-monitor
 
-![The monitor watched, the monitor waited. The monitor's patience has fully deflated. Two hours of coding, no break in between — now close the laptop. Go touch something green.](docs/screenshots/hard_block.jpg)
+![The monitor watched, the monitor waited. The monitor's patience has fully deflated. Two hours of coding, no break in between — now close the laptop. Go touch something green.](docs/screenshots/block.jpg)
 
 Makes Claude Code refuse your prompts after you've been at it too
 long. It counts how long you've been prompting Claude — across
 every session, every chat — and escalates from a funny poem to a
 hard block on new prompts until you step away.
 
-Three tiers, all configurable:
+Two tiers, both configurable:
 
-- **Gentle nudge** — Claude opens its next reply with a short, silly
-  poem telling you to stretch. An OS banner fires too.
-- **Firm nudge** — the poem gets ridiculous and mock-insulting.
-- **Hard block** — Claude Code refuses to send your prompt. In this
-  chat, in any other chat, in a brand-new session you just opened to
-  sneak around it. The block lifts only after a break of whatever
-  length you set.
+- **Nudge** — Claude opens its next reply with a reminder to take a
+  break. An OS banner fires too. You can still work.
+- **Block** — Claude Code refuses to send your prompt. In this chat,
+  in any other chat, in a brand-new session you just opened to sneak
+  around it. The block lifts only after a break of whatever length
+  you set.
 
 ## Everything is customizable
 
@@ -74,14 +73,15 @@ countdown once a nudge is active and you pause.
 Everything is in `config.yaml`. You can override any of it — the
 defaults are just one person's preferences.
 
-- **Thresholds** (`streak_limit_minutes`, `firm_nudge_minutes`,
-  `hard_block_minutes`, `idle_threshold_minutes`) — when each tier
-  fires, and how long a break has to be to count.
-- **Nudge text** (`gentle_nudge`, `firm_nudge`,
-  `hard_block_message`) — what Claude sees at each tier.
-  Placeholders available: `{mins}`, `{idle_min}`, `{streak_limit_min}`.
-- **Banner text** (`gentle_notification_title`/`body` etc.) — the
-  OS banner that fires alongside the poem.
+- **Thresholds** (`nudge_minutes`, `block_minutes`,
+  `idle_threshold_minutes`) — when each tier fires, and how long a
+  break has to be to count.
+- **Nudge text** (`nudge_instructions`, `block_message`) — what
+  Claude sees at each tier. Placeholders available: `{mins}`,
+  `{idle_min}`, `{nudge_min}`.
+- **Banner text** (`nudge_notification_title`/`body`,
+  `block_notification_title`/`body`) — the OS banner that fires
+  alongside each tier.
 
 After edits, restart the monitor:
 
@@ -94,9 +94,9 @@ systemctl --user restart claude-activity-monitor                       # Linux
 
 - `hook.sh` runs on every `UserPromptSubmit`. It (a) touches
   `data/last_prompt.ts` — the monitor's activity signal — and (b)
-  reads `stats/nudge.txt` to either inject a poem as context
-  (gentle/firm) or exit 2 to refuse the prompt (hard_block). It
-  also fires an OS banner at each tier.
+  reads `stats/nudge.txt` to either inject the reminder as context
+  (nudge tier) or exit 2 to refuse the prompt (block tier). It also
+  fires an OS banner at each tier.
 - `monitor.sh` polls every 30 seconds. It reads the mtime of
   `data/last_prompt.ts`, advances the streak, and writes the
   appropriate nudge once you cross a threshold.

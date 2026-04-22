@@ -13,25 +13,26 @@ agent) to install it on their machine. This file is the runbook.
   hook in `~/.claude/settings.json`. On every user prompt it (a)
   touches `data/last_prompt.ts` — this is the monitor's activity
   signal — and (b) reads `stats/nudge.txt` and either injects it as
-  context (gentle/firm tier), or exits 2 to refuse the prompt
-  (hard_block). The hook also fires a small OS banner at each tier so
-  the nudge is visible outside the chat.
+  context (nudge tier) or exits 2 to refuse the prompt (block
+  tier). The hook also fires a small OS banner at each tier so the
+  nudge is visible outside the chat.
 - `monitor.sh` runs as a background daemon. Every 30s it reads the
   mtime of `data/last_prompt.ts` and updates the streak. Mouse
   movement, typing outside Claude Code, background agents, and
-  Claude's own tool use deliberately do NOT count — only real user
-  prompts.
-- The monitor writes tiered nudges into `stats/nudge.txt` once the
-  streak crosses each threshold, and fires an OS banner at the
-  transition. Threshold *values* live in `config.yaml` — do not
-  quote specific minute numbers anywhere else, they will drift.
-- The hard-block lifts once no prompts have been submitted for
+  Claude's own tool use do NOT count — only real user prompts.
+- Two tiers: `nudge` and `block`. The monitor writes the active
+  tier into `stats/nudge.txt` once the streak crosses each
+  threshold, and fires an OS banner at the transition. Threshold
+  *values* live in `config.yaml` — do not quote specific minute
+  numbers anywhere else, they will drift.
+- The block lifts once no prompts have been submitted for
   `idle_threshold_minutes` — the monitor's next poll registers
   that as a real break.
 - The user can force an immediate reset with `rm stats/nudge.txt`.
   The monitor sees the deletion on its next poll and treats it as
   "I'm taking a break now": streak_start is set to now, and a
-  release notification fires if the prior streak was ≥ gentle.
+  release notification fires if the prior streak was past the
+  nudge threshold.
 
 Because `hook.sh` is global, this works across *every* Claude Code
 session on the machine, including new ones the user might open to try
@@ -118,14 +119,15 @@ After install, tell the user:
   Code session will enforce it automatically.
 - **The statusline** shows two modes:
   - Coding (just prompted): `Nm since break · blocked in Xm`, or
-    `BLOCKED · take a break` past the hard threshold.
+    `BLOCKED · take a break` past the block threshold.
   - Break (no prompts for a while): `break: Xm left` — a countdown
-    toward `idle_threshold_minutes`. If they prompt Claude again, the
-    statusline snaps back to coding mode, making the reset visible.
-- **At the gentle threshold** Claude opens its next reply with a poem
-  telling them to take a break + an OS banner fires. Firm threshold
-  is meaner. Past hard_block, new prompts are refused entirely — they
-  must stop prompting for `idle_threshold_minutes` to unblock.
+    toward `idle_threshold_minutes`. If they prompt Claude again,
+    the statusline snaps back to coding mode, making the reset
+    visible.
+- **At the nudge threshold** Claude opens its next reply with a
+  reminder to take a break, and an OS banner fires. Past the block
+  threshold, new prompts are refused entirely — they must stop
+  prompting for `idle_threshold_minutes` to unblock.
 - **What counts as activity:** *only* Claude Code `UserPromptSubmit`
   events. Mouse movement, typing in the terminal, other apps, and
   Claude's own tool use do NOT count.
@@ -148,21 +150,22 @@ cat data/state.json              # current streak state
 ```
 
 To force-test the nudge path without waiting on real thresholds,
-temporarily set `streak_limit_minutes: 1` in `config.yaml`, restart
-the monitor, wait 90 seconds, send a prompt — Claude should open
-with a poem. Reset afterward.
+temporarily set `nudge_minutes: 1` in `config.yaml`, restart the
+monitor, wait 90 seconds, send a prompt — Claude should open with a
+reminder. Reset afterward.
 
 ## Configuration
 
 Everything user-visible lives in `config.yaml`:
 
-- Thresholds (`idle_threshold_minutes`, `streak_limit_minutes`,
-  `firm_nudge_minutes`, `hard_block_minutes`).
-- Nudge instructions (`gentle_nudge`, `firm_nudge`, `hard_block_message`).
-  These are the text Claude sees at each tier — replace the poem with a
-  roast, a haiku, a song, a drill-sergeant memo. Placeholders available:
-  `{mins}`, `{idle_min}`, `{streak_limit_min}`.
-- OS notification title/body (`{tier}_notification_title/body`).
+- Thresholds (`idle_threshold_minutes`, `nudge_minutes`,
+  `block_minutes`).
+- Instructions to Claude (`nudge_instructions`, `block_message`) —
+  the text Claude sees at each tier. Replace the poem with a roast,
+  a haiku, a song, a drill-sergeant memo. Placeholders available:
+  `{mins}`, `{idle_min}`, `{nudge_min}`.
+- OS notification title/body (`nudge_notification_*`,
+  `block_notification_*`).
 
 After editing, restart the monitor so it picks up changes:
 

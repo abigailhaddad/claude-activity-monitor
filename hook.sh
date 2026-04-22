@@ -4,7 +4,7 @@
 #      signal. Every UserPromptSubmit extends the streak; anything
 #      else (mouse, typing outside Claude, background agents) does not.
 #   2. Read stats/nudge.txt and either inject it as context
-#      (gentle/firm tiers) or block the prompt with exit 2 (hard_block).
+#      (nudge tier) or refuse the prompt with exit 2 (block tier).
 #      Also fires an OS banner so the nudge is visible, not just
 #      present in Claude's response body.
 # Silent when no nudge is active or when the monitor hasn't touched
@@ -45,12 +45,11 @@ tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
 body=$(tail -n +2 "$NUDGE_FILE")
 
 case "$tier" in
-  gentle)     banner "Break nudge" "Stand up, stretch, look away." Glass ;;
-  firm)       banner "Break overdue" "Step away — body is not furniture." Glass ;;
-  hard_block) banner "Claude Code paused" "Break required before you can prompt again." Basso ;;
+  nudge) banner "Break nudge" "Stand up, stretch, look away." Glass ;;
+  block) banner "Claude Code paused" "Break required before you can prompt again." Basso ;;
 esac
 
-if [[ "$tier" == "hard_block" ]]; then
+if [[ "$tier" == "block" ]]; then
   printf '%s\n' "$body" >&2
   exit 2
 fi

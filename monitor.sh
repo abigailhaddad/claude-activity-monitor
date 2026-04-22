@@ -56,19 +56,18 @@ yaml_int() { yaml_get "$1" | tr -d '[:space:]'; }
 
 POLL_INTERVAL=$(yaml_int poll_interval_seconds)
 IDLE_THRESHOLD=$(( $(yaml_int idle_threshold_minutes) * 60 ))
-STREAK_LIMIT=$(( $(yaml_int streak_limit_minutes) * 60 ))
-FIRM_THRESHOLD=$(( $(yaml_int firm_nudge_minutes) * 60 ))
-HARD_BLOCK_THRESHOLD=$(( $(yaml_int hard_block_minutes) * 60 ))
+NUDGE_THRESHOLD=$(( $(yaml_int nudge_minutes) * 60 ))
+BLOCK_THRESHOLD=$(( $(yaml_int block_minutes) * 60 ))
 NOTIFY_COOLDOWN=$(( $(yaml_int notify_cooldown_minutes) * 60 ))
 
-# Substitute {mins}, {idle_min}, {streak_limit_min} placeholders.
+# Substitute {mins}, {idle_min}, {nudge_min} placeholders.
 render_template() {
   local tpl="$1" mins="$2"
   local idle_min=$(( IDLE_THRESHOLD / 60 ))
-  local streak_limit_min=$(( STREAK_LIMIT / 60 ))
+  local nudge_min=$(( NUDGE_THRESHOLD / 60 ))
   tpl=${tpl//\{mins\}/$mins}
   tpl=${tpl//\{idle_min\}/$idle_min}
-  tpl=${tpl//\{streak_limit_min\}/$streak_limit_min}
+  tpl=${tpl//\{nudge_min\}/$nudge_min}
   printf '%s' "$tpl"
 }
 
@@ -137,9 +136,8 @@ notify() {
 write_nudge() {
   local mins="$1" tier="$2" key body
   case "$tier" in
-    gentle)     key=gentle_nudge ;;
-    firm)       key=firm_nudge ;;
-    hard_block) key=hard_block_message ;;
+    nudge) key=nudge_instructions ;;
+    block) key=block_message ;;
     *) return ;;
   esac
   body=$(render_template "$(yaml_get "$key")" "$mins")
@@ -158,8 +156,8 @@ read_state() {
 }
 
 # last_tier is the most recent tier the monitor wrote to nudge.txt
-# ("gentle"/"firm"/"hard_block", or "" if nudge was cleared). Lets the
-# loop distinguish "monitor cleared nudge" (we set last_tier="") from
+# ("nudge"/"block", or "" if nudge was cleared). Lets the loop
+# distinguish "monitor cleared nudge" (we set last_tier="") from
 # "user manually deleted nudge to request a reset" (last_tier still
 # non-empty but nudge.txt is gone).
 write_state() {
@@ -167,7 +165,7 @@ write_state() {
     "$1" "$2" "$3" "$4" "$5" > "$STATE_FILE"
 }
 
-plog "monitor started (pid=$$, streak_limit=${STREAK_LIMIT}s, idle=${IDLE_THRESHOLD}s, poll=${POLL_INTERVAL}s)"
+plog "monitor started (pid=$$, nudge=${NUDGE_THRESHOLD}s, block=${BLOCK_THRESHOLD}s, idle=${IDLE_THRESHOLD}s, poll=${POLL_INTERVAL}s)"
 [[ -f "$NUDGE_FILE" ]] || clear_nudge
 
 while true; do
@@ -191,7 +189,7 @@ while true; do
     prior_streak=$(( last_event - streak_start ))
     (( prior_streak < 0 )) && prior_streak=0
     slog "manual_reset prior_streak_min=$(( prior_streak / 60 )) prior_tier=${last_tier}"
-    if (( prior_streak >= STREAK_LIMIT )); then
+    if (( prior_streak >= NUDGE_THRESHOLD )); then
       last_release=$now
       send_notification "Claude Code: break registered" "Manual reset. You're unblocked." urgent
     fi
@@ -209,10 +207,10 @@ while true; do
       if (( last_event > 0 )); then
         streak_len=$(( last_event - streak_start ))
         slog "break_end prior_streak_min=$(( streak_len / 60 )) gap_min=$(( gap / 60 ))"
-        # If the prior streak had crossed at least the gentle threshold,
+        # If the prior streak had crossed at least the nudge threshold,
         # this break is a real "release" — log + notify so the user
         # knows they are unblocked.
-        if (( streak_len >= STREAK_LIMIT )); then
+        if (( streak_len >= NUDGE_THRESHOLD )); then
           last_release=$now
           slog "release prior_streak_min=$(( streak_len / 60 ))"
           send_notification "Claude Code: break registered" "You're unblocked. Welcome back." urgent
@@ -229,9 +227,8 @@ while true; do
   if (( last_event > 0 )) && (( now - last_event < IDLE_THRESHOLD )); then
     active_streak=$(( now - streak_start ))
     tier=""
-    if   (( active_streak >= HARD_BLOCK_THRESHOLD )); then tier=hard_block
-    elif (( active_streak >= FIRM_THRESHOLD ));       then tier=firm
-    elif (( active_streak >= STREAK_LIMIT ));         then tier=gentle
+    if   (( active_streak >= BLOCK_THRESHOLD )); then tier=block
+    elif (( active_streak >= NUDGE_THRESHOLD )); then tier=nudge
     fi
     if [[ -n "$tier" ]]; then
       mins=$(( active_streak / 60 ))

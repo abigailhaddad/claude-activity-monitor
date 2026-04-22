@@ -99,4 +99,4 @@ esac
 
 echo
 echo "Done. Open a new Claude Code session and start prompting — the monitor"
-echo "will track your streak and nudge you at $(sed -nE 's/^streak_limit_minutes:[[:space:]]*([0-9]+).*/\1/p' "$ROOT/config.yaml") minutes."
+echo "will track your streak and nudge you at $(sed -nE 's/^nudge_minutes:[[:space:]]*([0-9]+).*/\1/p' "$ROOT/config.yaml") minutes."

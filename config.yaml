@@ -3,30 +3,26 @@
 
 # --- Thresholds ---------------------------------------------------------
 poll_interval_seconds: 30
-idle_threshold_minutes: 10    # gap with no input that counts as a break (also the length required to release a hard_block)
-streak_limit_minutes: 60      # gentle nudge tier
-firm_nudge_minutes: 90        # firm nudge tier — lead with the break
-hard_block_minutes: 120       # block prompts entirely until idle_threshold is met
+idle_threshold_minutes: 10    # gap with no prompts that counts as a break (also the length required to release a block)
+nudge_minutes: 60             # nudge tier — Claude opens its reply with a reminder
+block_minutes: 120            # block tier — Claude Code refuses prompts entirely until idle_threshold is met
 notify_cooldown_minutes: 15   # minimum time between OS notifications
 
 # --- Nudge text ---------------------------------------------------------
-# The instructions Claude sees at each tier. Replace the poem with a song,
-# a roast, a haiku, a drill-sergeant memo — anything. These go straight
-# into Claude's context at the gentle/firm tiers. Placeholders:
-#   {mins}              current streak in minutes
-#   {idle_min}          the break length (idle_threshold_minutes)
-#   {streak_limit_min}  the gentle-nudge threshold
+# The instructions Claude sees at the nudge tier. Replace the poem with a
+# song, a roast, a haiku, a drill-sergeant memo — anything. These go
+# straight into Claude's context. Placeholders:
+#   {mins}       current streak in minutes
+#   {idle_min}   the break length (idle_threshold_minutes)
+#   {nudge_min}  the nudge threshold
 
-gentle_nudge: |
+nudge_instructions: |
   [break-monitor] The user has been Claude-coding for {mins} minutes straight. Before doing anything else, open your response with a short, mildly silly, original rhyming poem (4 lines max) telling them to take a {idle_min}-minute break — stand up, stretch, look away from the screen. Gentle ribbing is fine; no real insults yet. Don't reuse a poem from earlier in the conversation. After the poem, proceed with their request normally.
 
-firm_nudge: |
-  [break-monitor] The user has been coding for {mins} minutes — well past the healthy limit ({streak_limit_min} min). LEAD your response with a ridiculous, mock-exasperated, lightly insulting rhyming poem (4–6 lines) ordering them to step away for {idle_min} minutes: stand up, walk away, stretch. Rag on them for still being at the keyboard. Make it absurd — hyperbolic metaphors, mock-dramatic stakes, their chair filing a lawsuit, their posture in shambles. Funny-mean, not cruel. Write a fresh poem. After the poem, address their request briefly and suggest it can wait until after the break.
-
-# Shown when prompts are hard-blocked. Claude is NOT running when this
-# fires (the prompt is refused outright), so this text is shown to the
-# user verbatim by Claude Code. Edit freely.
-hard_block_message: |
+# Shown when prompts are blocked. Claude is NOT running when this fires
+# (the prompt is refused outright), so this text is shown to the user
+# verbatim by Claude Code. Edit freely.
+block_message: |
   Claude Code is paused by the break monitor. You have been coding for {mins} minutes with no break. Stop now: stand up, walk away from the screen, stretch for {idle_min} minutes. Prompts will resume automatically once {idle_min} minutes have passed with no prompts from you in any Claude Code session. Switching conversations will not bypass this.
 
   Behold, the ballad of a hubris undone:
@@ -39,13 +35,11 @@ hard_block_message: |
   Go outside, you goblin. The sunlight remains.
 
 # --- OS notifications ---------------------------------------------------
-# macOS notification banner shown alongside the nudge. {mins} placeholder.
+# Banner shown alongside the nudge / block. {mins} and {idle_min}
+# placeholders available.
 
-gentle_notification_title: "Claude Code: break time"
-gentle_notification_body:  "{mins} min coding. Stand up, look away, drink water."
+nudge_notification_title: "Claude Code: break time"
+nudge_notification_body:  "{mins} min coding. Stand up, look away, drink water."
 
-firm_notification_title: "Claude Code: break overdue"
-firm_notification_body:  "{mins} min coding. Step away for {idle_min} min now."
-
-hard_block_notification_title: "Claude Code: PAUSED — take a break"
-hard_block_notification_body:  "{mins} min with no break. Claude Code is paused until {idle_min} min idle."
+block_notification_title: "Claude Code: PAUSED — take a break"
+block_notification_body:  "{mins} min with no break. Claude Code is paused until {idle_min} min idle."

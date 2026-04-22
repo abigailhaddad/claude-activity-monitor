@@ -54,15 +54,14 @@ now=$(date +%s)
 mins=$(( (now - streak_start) / 60 ))
 
 yaml_int() { sed -nE "s/^$1:[[:space:]]*([0-9]+).*/\1/p" "$CONFIG"; }
-gentle=$(yaml_int streak_limit_minutes)
-firm=$(yaml_int firm_nudge_minutes)
-hard=$(yaml_int hard_block_minutes)
+nudge_at=$(yaml_int nudge_minutes)
+block_at=$(yaml_int block_minutes)
 idle=$(yaml_int idle_threshold_minutes)
 
 # Idle progress toward a break-end reset. last_event is updated by the
-# monitor each poll (~30s cadence) to the time of the user's most recent
-# input while a coding app was frontmost. "now - last_event" climbs while
-# they're idle and snaps back to ~0m the next poll after they type,
+# monitor each poll (~30s cadence) to the time of the user's most
+# recent Claude Code prompt submission. "now - last_event" climbs while
+# they're idle and snaps back to ~0m the next poll after they prompt,
 # which is the visible feedback the user wants.
 idle_min=0
 if [[ -n "$last_event" && "$last_event" != "0" ]]; then
@@ -74,18 +73,17 @@ fi
 
 # Determine tier. Prefer nudge.txt (source of truth for what hook.sh
 # will do on the next prompt), but fall back to streak math when
-# nudge.txt is empty — it's empty while you're currently idle, but the
-# streak hasn't reset yet, and showing no tier + default countdowns
-# produces nonsense like "nudge in 0m".
+# nudge.txt is empty — it's empty while you're currently idle, but
+# the streak hasn't reset yet, so we need to infer the tier ourselves
+# to keep the statusline consistent with what the hook will actually do.
 tier=""
 if [[ -s "$NUDGE_FILE" ]]; then
   nudge_age=$(( now - $(mtime "$NUDGE_FILE") ))
   (( nudge_age < 180 )) && tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
 fi
 if [[ -z "$tier" ]]; then
-  if   (( mins >= hard ));   then tier=hard_block
-  elif (( mins >= firm ));   then tier=firm
-  elif (( mins >= gentle )); then tier=gentle
+  if   (( mins >= block_at )); then tier=block
+  elif (( mins >= nudge_at )); then tier=nudge
   fi
 fi
 
@@ -97,7 +95,7 @@ fi
 #             does something (clears the nudge or unblocks). Pre-nudge
 #             pauses stay in coding mode so a freshly-reset streak
 #             doesn't immediately flip into "break: 9m left".
-blocked_in=$(( hard > mins ? hard - mins : 0 ))
+blocked_in=$(( block_at > mins ? block_at - mins : 0 ))
 break_left=$(( idle > idle_min ? idle - idle_min : 0 ))
 
 if (( idle_min > 0 )) && [[ -n "$tier" ]]; then
@@ -109,13 +107,13 @@ if (( idle_min > 0 )) && [[ -n "$tier" ]]; then
   else
     suffix=$(printf 'break: %dm left' "$break_left")
   fi
-  if [[ "$tier" == "hard_block" ]]; then
+  if [[ "$tier" == "block" ]]; then
     printf 'BLOCKED · %s' "$suffix"
   else
     printf '%s' "$suffix"
   fi
 else
-  if [[ "$tier" == "hard_block" ]]; then
+  if [[ "$tier" == "block" ]]; then
     printf 'BLOCKED · take a break'
   else
     printf '%dm since break · blocked in %dm' "$mins" "$blocked_in"
