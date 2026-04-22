@@ -26,16 +26,9 @@ pirate shanty, a drill-sergeant memo — Claude reads whatever you
 put there. Change the break length to 2 minutes or 30. The shipped
 defaults are a starting point, not a prescription.
 
-## What counts as activity
-
-*Only* Claude Code user-prompt submissions. A `UserPromptSubmit`
-hook touches a timestamp file; the monitor reads that. Mouse
-movement, typing in the terminal, switching to email, Claude's own
-tool calls, background agents, and `/loop` invocations don't count.
-The tool is scoped to *you* prompting Claude.
-
-A "break" is simply the absence of prompts for the configured idle
-window. If you stop prompting for long enough, the streak resets.
+The monitor only watches prompts you send to Claude Code. Walking
+away from the keyboard or working in other apps does nothing on its
+own — a break is just time spent not prompting Claude.
 
 ## Demo
 
