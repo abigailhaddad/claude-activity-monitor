@@ -23,17 +23,21 @@ mtime() {
   stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null
 }
 
-# If a break was just registered (a nudged streak ended with a real
-# idle gap), show a confirmation banner until the next UserPromptSubmit.
-# This works even before the user has ever prompted — useful for
-# freshly-unblocked sessions the user is returning to.
+# If a break was just registered, show a confirmation banner for a
+# short window (or until the next prompt, whichever comes first).
+# Time cap: without it, the SwiftBar menubar — which re-polls on a
+# timer, not on prompts — would stay stuck on this banner forever
+# after a manual_reset if the user doesn't prompt again soon, hiding
+# the normal streak display.
+RELEASE_BANNER_WINDOW=60
 if [[ -f "$STATE" ]]; then
   last_release=$(jq -r '.last_release // 0' "$STATE" 2>/dev/null)
   if [[ -n "$last_release" && "$last_release" != "0" ]]; then
     last_prompt=0
     [[ -f "$LAST_PROMPT_FILE" ]] && last_prompt=$(mtime "$LAST_PROMPT_FILE")
     last_prompt=${last_prompt:-0}
-    if (( last_release > last_prompt )); then
+    release_age=$(( $(date +%s) - last_release ))
+    if (( last_release > last_prompt )) && (( release_age < RELEASE_BANNER_WINDOW )); then
       printf 'break registered · Claude Code is unblocked'
       exit 0
     fi
@@ -119,7 +123,11 @@ if (( idle_min > 0 )) && [[ -n "$tier" ]]; then
   fi
 else
   if [[ "$tier" == "block" ]]; then
-    printf 'BLOCKED · take a break'
+    if (( break_left == 0 )); then
+      printf 'BLOCKED · break · done, resetting'
+    else
+      printf 'BLOCKED · break: %dm left' "$break_left"
+    fi
   else
     printf '%dm since break · blocked in %dm' "$mins" "$blocked_in"
   fi
