@@ -15,8 +15,8 @@ Three tiers, all configurable:
 - **Firm nudge** — the poem gets ridiculous and mock-insulting.
 - **Hard block** — Claude Code refuses to send your prompt. In this
   chat, in any other chat, in a brand-new session you just opened to
-  sneak around it. The block lifts only after you've been idle long
-  enough to count as a real break.
+  sneak around it. The block lifts only after a break of whatever
+  length you set.
 
 ## Everything is customizable
 
