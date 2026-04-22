@@ -155,6 +155,15 @@ notify() {
   play_audio "$(yaml_get "${tier}_audio_file")"
 }
 
+# Fire-and-forget SwiftBar refresh so the menubar reflects a tier
+# change immediately instead of waiting on its ~1-min polling cadence
+# (filename convention is *.1m.sh). Without this, the OS banner fires
+# on the tier flip but the menubar sits stale until the next refresh.
+refresh_menubar() {
+  [[ "$(uname)" == "Darwin" ]] || return
+  /usr/bin/open -g 'swiftbar://refreshallplugins' >/dev/null 2>&1 &
+}
+
 write_nudge() {
   local mins="$1" tier="$2" key body
   case "$tier" in
@@ -167,9 +176,10 @@ write_nudge() {
     printf 'TIER=%s\n' "$tier"
     printf '%s\n' "$body"
   } > "$ACTIVE_FILE"
+  refresh_menubar
 }
 
-clear_nudge() { : > "$ACTIVE_FILE"; }
+clear_nudge() { : > "$ACTIVE_FILE"; refresh_menubar; }
 
 read_state() {
   if [[ -f "$STATE_FILE" ]]; then cat "$STATE_FILE"
@@ -230,6 +240,7 @@ while true; do
     last_event=$now
     last_tier=""
     write_state "$last_event" "$streak_start" "$last_notified" "$last_release" "$last_tier"
+    refresh_menubar
     sleep "$POLL_INTERVAL"
     continue
   fi
