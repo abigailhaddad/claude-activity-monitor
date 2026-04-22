@@ -75,9 +75,11 @@ plog() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$PRIVATE_LOG";
 slog() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$PUBLIC_LOG"; }
 
 mtime() {
-  # Portable file mtime in epoch seconds. BSD/macOS uses `stat -f %m`,
-  # GNU/Linux uses `stat -c %Y`. Falls back silently on either.
-  stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null
+  # Portable file mtime in epoch seconds. Try GNU/Linux (`stat -c %Y`)
+  # first — on Linux, `stat -f` silently prints filesystem info
+  # (success exit, junk output) which would poison downstream
+  # arithmetic. macOS falls through to `stat -f %m`.
+  stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null
 }
 
 latest_event_epoch() {

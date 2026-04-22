@@ -16,7 +16,12 @@ CONFIG="$ROOT/config.yaml"
 NUDGE_FILE="$ROOT/stats/nudge.txt"
 LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 
-mtime() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null; }
+mtime() {
+  # GNU/Linux (`stat -c %Y`) first, because BSD `stat -f` on Linux
+  # silently prints filesystem info — success exit, junk output —
+  # which poisons any arithmetic downstream.
+  stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null
+}
 
 # If a break was just registered (a nudged streak ended with a real
 # idle gap), show a confirmation banner until the next UserPromptSubmit.

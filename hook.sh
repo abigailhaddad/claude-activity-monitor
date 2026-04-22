@@ -38,7 +38,7 @@ banner() {
 [[ -s "$NUDGE_FILE" ]] || exit 0
 
 now=$(date +%s)
-mtime=$(stat -f %m "$NUDGE_FILE" 2>/dev/null || stat -c %Y "$NUDGE_FILE" 2>/dev/null || echo 0)
+mtime=$(stat -c %Y "$NUDGE_FILE" 2>/dev/null || stat -f %m "$NUDGE_FILE" 2>/dev/null || echo 0)
 (( now - mtime > STALE_SECONDS )) && exit 0
 
 tier=$(head -n1 "$NUDGE_FILE" | sed -n 's/^TIER=//p')
