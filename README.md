@@ -26,11 +26,6 @@ pirate shanty, a drill-sergeant memo — Claude reads whatever you
 put there. Change the break length to 2 minutes or 30. The shipped
 defaults are a starting point, not a prescription.
 
-## Why
-
-"Take a break" banners you can dismiss don't work. This one stops
-the work until you rest.
-
 ## What counts as activity
 
 *Only* Claude Code user-prompt submissions. A `UserPromptSubmit`
