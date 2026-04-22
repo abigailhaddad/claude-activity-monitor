@@ -16,7 +16,9 @@ Two tiers, both configurable:
 - **Block** — Claude Code refuses to send your prompt. In this chat,
   in any other chat, in a brand-new session you just opened to sneak
   around it. The block lifts only after a break of whatever length
-  you set.
+  you set. (Numbered choices in menus Claude is already showing you —
+  permission prompts, ExitPlanMode options — still work. The block
+  only refuses *new* text prompts.)
 
 ## Everything is customizable
 

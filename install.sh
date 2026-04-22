@@ -13,11 +13,70 @@ MONITOR="$ROOT/monitor.sh"
 STATUSLINE="$ROOT/statusline.sh"
 SETTINGS="$HOME/.claude/settings.json"
 
+CONFIG="$ROOT/config.yaml"
+
 command -v jq >/dev/null || { echo "error: jq is required (brew install jq / apt install jq)" >&2; exit 1; }
 chmod +x "$HOOK" "$MONITOR" "$STATUSLINE" 2>/dev/null || true
 
 mkdir -p "$(dirname "$SETTINGS")"
 [[ -f "$SETTINGS" ]] || echo '{}' > "$SETTINGS"
+
+# --- Interactive config (only when run from a TTY) ---------------------
+# When piped into — `curl ... | sh` — stdin is not a TTY, so we skip the
+# prompts and use whatever is already in config.yaml.
+if [[ -t 0 ]]; then
+  cur_nudge=$(sed -nE 's/^nudge_minutes:[[:space:]]*([0-9]+).*/\1/p' "$CONFIG")
+  cur_block=$(sed -nE 's/^block_minutes:[[:space:]]*([0-9]+).*/\1/p' "$CONFIG")
+  cur_idle=$(sed -nE 's/^idle_threshold_minutes:[[:space:]]*([0-9]+).*/\1/p' "$CONFIG")
+  cur_audio="N"
+  grep -qE '^(nudge|block|release)_audio_file:[[:space:]]*"[^"]+"' "$CONFIG" && cur_audio="Y"
+
+  echo "Configure (hit Enter to accept the shown default):"
+  read -rp "  Nudge tier fires at [$cur_nudge] minutes of coding: " in_nudge
+  read -rp "  Block tier fires at [$cur_block] minutes of coding: " in_block
+  read -rp "  Break length required to reset [$cur_idle] minutes: " in_idle
+  read -rp "  Play audio at block / break-end? [$cur_audio/n]: " in_audio
+
+  new_nudge=${in_nudge:-$cur_nudge}
+  new_block=${in_block:-$cur_block}
+  new_idle=${in_idle:-$cur_idle}
+
+  # Integer-validate; silently keep current if the user typed garbage.
+  [[ "$new_nudge" =~ ^[0-9]+$ ]] || new_nudge=$cur_nudge
+  [[ "$new_block" =~ ^[0-9]+$ ]] || new_block=$cur_block
+  [[ "$new_idle"  =~ ^[0-9]+$ ]] || new_idle=$cur_idle
+
+  # Normalize audio answer. Empty = accept default. n/N/no → off.
+  want_audio_on=1
+  case "${in_audio:-}" in
+    ""|y|Y|yes|YES) [[ "$cur_audio" == "Y" ]] && want_audio_on=1 || want_audio_on=0 ;;
+    n|N|no|NO)      want_audio_on=0 ;;
+    *)              [[ "$cur_audio" == "Y" ]] && want_audio_on=1 || want_audio_on=0 ;;
+  esac
+
+  tmp=$(mktemp)
+  sed -E \
+    -e "s|^nudge_minutes:[[:space:]]*[0-9]+.*|nudge_minutes: $new_nudge|" \
+    -e "s|^block_minutes:[[:space:]]*[0-9]+.*|block_minutes: $new_block|" \
+    -e "s|^idle_threshold_minutes:[[:space:]]*[0-9]+.*|idle_threshold_minutes: $new_idle|" \
+    "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
+
+  if (( want_audio_on == 0 )); then
+    tmp=$(mktemp)
+    sed -E 's|^(nudge_audio_file|block_audio_file|release_audio_file):.*|\1: ""|' \
+      "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
+  else
+    # Restore the shipped defaults if the user previously turned audio
+    # off and is now turning it back on. Only touch block/release —
+    # nudge ships silent.
+    tmp=$(mktemp)
+    sed -E \
+      -e 's|^block_audio_file:.*|block_audio_file: "assets/block.mp3"|' \
+      -e 's|^release_audio_file:.*|release_audio_file: "assets/release.mp3"|' \
+      "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
+  fi
+  echo
+fi
 
 # --- Hook registration --------------------------------------------------
 # Idempotent: only add if no hook with the same command already exists.
@@ -64,6 +123,10 @@ case "$(uname)" in
     <key>KeepAlive</key>                <true/>
     <key>StandardOutPath</key>          <string>$ROOT/data/monitor.log</string>
     <key>StandardErrorPath</key>        <string>$ROOT/data/monitor.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>                 <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
 </dict>
 </plist>
 EOF
@@ -104,10 +167,11 @@ echo
 echo "Verifying:"
 fail=0
 
-# Daemon is up. Give launchd/systemd a moment to spawn the process.
-for _ in 1 2 3 4 5; do
+# Daemon is up. launchd reload can take a couple of seconds on a
+# first-run permission prompt, so wait up to ~3s.
+for _ in $(seq 1 30); do
   pgrep -f "$MONITOR" >/dev/null 2>&1 && break
-  sleep 0.2
+  sleep 0.1
 done
 if pgrep -f "$MONITOR" >/dev/null 2>&1; then
   echo "  ✓ monitor is running"

@@ -194,11 +194,21 @@ while true; do
   latest=$(latest_event_epoch); latest=${latest:-0}
 
   state=$(read_state)
-  last_event=$(echo "$state" | jq -r '.last_event')
-  streak_start=$(echo "$state" | jq -r '.streak_start')
-  last_notified=$(echo "$state" | jq -r '.last_notified')
+  # Use `// 0` / `// ""` on every field so a corrupt state.json never
+  # propagates empty strings into the write_state printf (which would
+  # produce invalid JSON like `"last_notified":,` and wedge the loop).
+  last_event=$(echo "$state" | jq -r '.last_event // 0')
+  streak_start=$(echo "$state" | jq -r '.streak_start // 0')
+  last_notified=$(echo "$state" | jq -r '.last_notified // 0')
   last_release=$(echo "$state" | jq -r '.last_release // 0')
   last_tier=$(echo "$state" | jq -r '.last_tier // ""')
+  # Belt and suspenders: if jq failed entirely (e.g. corrupt JSON
+  # parse error), every variable is the string "null" or "". Coerce
+  # all the numeric ones so arithmetic never sees "".
+  [[ "$last_event"    =~ ^[0-9]+$ ]] || last_event=0
+  [[ "$streak_start"  =~ ^[0-9]+$ ]] || streak_start=0
+  [[ "$last_notified" =~ ^[0-9]+$ ]] || last_notified=0
+  [[ "$last_release"  =~ ^[0-9]+$ ]] || last_release=0
 
   # Manual reset: user deleted/emptied nudge.txt while the monitor
   # believed a nudge was in effect. Treat as "I'm taking a break now"
