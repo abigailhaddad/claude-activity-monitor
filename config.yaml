@@ -2,8 +2,12 @@
 # Times are in minutes unless the key name says seconds.
 
 # --- Thresholds ---------------------------------------------------------
+# These are re-read live: edits take effect on the next poll, no restart.
+# When an enforced break ends you get a dialog asking for the next
+# block_minutes and idle_threshold_minutes; nudge_minutes is set to half
+# of block_minutes automatically.
 poll_interval_seconds: 30
-idle_threshold_minutes: 10    # gap with no prompts that counts as a break (also the length required to release a block)
+idle_threshold_minutes: 10    # break length: gap with no prompts that counts as a break, and the full break enforced after a block
 nudge_minutes: 60             # nudge tier — Claude opens its reply with a reminder
 block_minutes: 120            # block tier — Claude Code refuses prompts entirely until idle_threshold is met
 notify_cooldown_minutes: 15   # minimum time between OS notifications
@@ -15,6 +19,7 @@ notify_cooldown_minutes: 15   # minimum time between OS notifications
 #   {mins}       current streak in minutes
 #   {idle_min}   the break length (idle_threshold_minutes)
 #   {nudge_min}  the nudge threshold
+#   {remaining}  minutes of enforced break still left (block tier only)
 
 nudge_instructions: |
   [break-monitor] The user has been Claude-coding for {mins} minutes straight. Before doing anything else, open your response with a short, mildly silly, original rhyming poem (4 lines max) telling them to take a {idle_min}-minute break — stand up, stretch, look away from the screen. Gentle ribbing is fine; no real insults yet. Don't reuse a poem from earlier in the conversation. After the poem, proceed with their request normally.
@@ -42,7 +47,7 @@ nudge_notification_title: "Claude Code: break time"
 nudge_notification_body:  "{mins} min coding. Stand up, look away, drink water."
 
 block_notification_title: "Claude Code: PAUSED — take a break"
-block_notification_body:  "{mins} min with no break. Claude Code is paused until {idle_min} min idle."
+block_notification_body:  "{mins} min with no break. Paused — {remaining} min of break left."
 
 # --- Audio clips --------------------------------------------------------
 # Optional audio played when each tier fires, on top of the banner's

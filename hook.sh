@@ -31,6 +31,17 @@ LAST_PROMPT_FILE="$ROOT/data/last_prompt.ts"
 # its mtime against this marker lets us inject exactly once per epoch
 # across every open Claude Code session.
 INJECTED_FILE="$ROOT/data/last_injected.ts"
+# Dead-daemon fail-open. monitor.sh touches the heartbeat on every poll
+# (30s by default), so a heartbeat older than this means the monitor is
+# gone and active.txt is a leftover we must not enforce — otherwise a
+# crashed daemon would lock the user out of Claude Code permanently.
+#
+# This deliberately does NOT key off active.txt's own mtime. The monitor
+# only rewrites active.txt on tier transitions, so its mtime is frozen
+# at the instant the tier flipped; keying staleness off it meant every
+# block silently stopped being enforced 3 minutes after it fired, while
+# the streak kept climbing well past the block threshold.
+HEARTBEAT_FILE="$ROOT/data/monitor.heartbeat"
 STALE_SECONDS=180
 
 # Read the event payload off stdin (Claude Code pipes JSON). If jq is
@@ -58,20 +69,27 @@ fi
 now=$(date +%s)
 mtime_of() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
 
+# Is the monitor daemon actually alive right now? Everything active.txt
+# says is only trustworthy while it is.
+monitor_alive() {
+  [[ -f "$HEARTBEAT_FILE" ]] || return 1
+  local hb
+  hb=$(mtime_of "$HEARTBEAT_FILE")
+  [[ "$hb" =~ ^[0-9]+$ ]] || return 1
+  (( now - hb <= STALE_SECONDS ))
+}
+
 # Block tier is checked BEFORE touching last_prompt.ts. If we touched
 # it on every rejected attempt, the user could never unblock: each
 # blocked prompt would reset the monitor's idle countdown and extend
 # the break indefinitely. A refused prompt is not engagement; the
 # user's break clock must keep running.
-if [[ -s "$ACTIVE_FILE" ]]; then
-  active_mtime=$(mtime_of "$ACTIVE_FILE")
-  if (( now - active_mtime <= STALE_SECONDS )); then
-    tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
-    if [[ "$tier" == "block" ]]; then
-      body=$(tail -n +2 "$ACTIVE_FILE")
-      printf '%s\n' "$body" >&2
-      exit 2
-    fi
+if [[ -s "$ACTIVE_FILE" ]] && monitor_alive; then
+  tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
+  if [[ "$tier" == "block" ]]; then
+    body=$(tail -n +2 "$ACTIVE_FILE")
+    printf '%s\n' "$body" >&2
+    exit 2
   fi
 fi
 
@@ -79,8 +97,8 @@ fi
 : > "$LAST_PROMPT_FILE"
 
 [[ -s "$ACTIVE_FILE" ]] || exit 0
+monitor_alive || exit 0
 active_mtime=$(mtime_of "$ACTIVE_FILE")
-(( now - active_mtime > STALE_SECONDS )) && exit 0
 tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
 body=$(tail -n +2 "$ACTIVE_FILE")
 

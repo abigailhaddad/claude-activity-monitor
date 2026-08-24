@@ -7,7 +7,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 fail=0
 for t in "$DIR"/test_*.sh; do
-  bash "$t" || fail=1
+  # </dev/null so hook.sh's `input=$(cat)` never blocks waiting on a
+  # terminal when the suite is run interactively.
+  bash "$t" </dev/null || fail=1
   echo
 done
 

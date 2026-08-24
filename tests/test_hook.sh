@@ -15,6 +15,12 @@ cp "$HOOK" "$TMP/hook.sh"
 
 ACTIVE="$TMP/stats/active.txt"
 LAST_PROMPT="$TMP/data/last_prompt.ts"
+HEARTBEAT="$TMP/data/monitor.heartbeat"
+
+# The hook enforces nothing unless the monitor daemon is alive, which it
+# proves by touching the heartbeat every poll. Fresh by default here.
+: > "$HEARTBEAT"
+backdate() { touch -t "$(date -v-"$2" +%Y%m%d%H%M.%S 2>/dev/null || date -d "-$2" +%Y%m%d%H%M.%S)" "$1"; }
 
 echo "== hook.sh =="
 
@@ -42,16 +48,45 @@ stderr=$(bash "$TMP/hook.sh" 2>&1 >/dev/null); ec=$?
 assert_exit "$ec" "2" "block: exit 2 (prompt refused)"
 assert_contains "$stderr" "you are blocked" "block: body on stderr"
 
-# 4. Stale active file (mtime > 180s) → ignored, exit 0.
+# 4. REGRESSION: an old active.txt is still enforced as long as the
+#    daemon is alive. The monitor rewrites active.txt only on tier
+#    transitions, so its mtime is frozen at the moment the block fired.
+#    The hook used to age active.txt out after 180s, which silently
+#    disarmed every block three minutes in while the streak kept
+#    climbing past the block threshold (observed: 120 -> 136 min).
 cat > "$ACTIVE" <<EOF
 TIER=block
-this is stale and should be ignored
+old block, still in force
 EOF
-# Backdate the file 5 minutes.
-touch -t "$(date -v-5M +%Y%m%d%H%M.%S 2>/dev/null || date -d '-5 min' +%Y%m%d%H%M.%S)" "$ACTIVE"
+backdate "$ACTIVE" 30M
+: > "$HEARTBEAT"
+rm -f "$LAST_PROMPT"
+stderr=$(bash "$TMP/hook.sh" 2>&1 >/dev/null); ec=$?
+assert_exit "$ec" "2" "30-min-old block + live daemon: still refused"
+assert_contains "$stderr" "still in force" "old block: body still shown"
+[[ ! -f "$LAST_PROMPT" ]] && {
+  PASS=$((PASS + 1))
+  echo "  ✓ old block: last_prompt.ts NOT touched (streak cannot climb past block)"
+} || {
+  FAIL=$((FAIL + 1))
+  FAILED_TESTS+=("old block: last_prompt.ts was touched")
+  echo "  ✗ old block: last_prompt.ts was touched — streak keeps climbing past block"
+}
+
+# 5. Dead daemon → fail open. A stale heartbeat means the monitor
+#    crashed and active.txt is a leftover; enforcing it would lock the
+#    user out of Claude Code permanently.
+backdate "$HEARTBEAT" 5M
 out=$(bash "$TMP/hook.sh" 2>&1); ec=$?
-assert_exit "$ec" "0" "stale active: exit 0 (not blocked)"
-assert_eq "$out" "" "stale active: no output"
+assert_exit "$ec" "0" "dead daemon: exit 0 (not blocked)"
+assert_eq "$out" "" "dead daemon: no output"
+
+# 5b. No heartbeat file at all → also fail open.
+rm -f "$HEARTBEAT"
+out=$(bash "$TMP/hook.sh" 2>&1); ec=$?
+assert_exit "$ec" "0" "no heartbeat: exit 0 (not blocked)"
+assert_eq "$out" "" "no heartbeat: no output"
+: > "$HEARTBEAT"
 
 # 5. Stop event → exit 0, no output, and last_prompt.ts NOT touched.
 #    Response-end is deliberately not counted as engagement: the user

@@ -23,4 +23,13 @@ assert_eq "$out" "No placeholders here" "leaves plain text alone"
 out=$(render_template "multi {mins} {mins} {mins}" "5")
 assert_eq "$out" "multi 5 5 5" "substitutes all occurrences of same placeholder"
 
+# {remaining} — minutes of enforced break still to serve. Defaults to a
+# full break when not supplied, so the block banner reads correctly at
+# the instant the block fires.
+out=$(render_template "Paused — {remaining} min of break left." "120" "4")
+assert_eq "$out" "Paused — 4 min of break left." "substitutes {remaining}"
+
+out=$(render_template "Paused — {remaining} min of break left." "120")
+assert_eq "$out" "Paused — 10 min of break left." "{remaining} defaults to full break length"
+
 report

@@ -40,9 +40,13 @@ Two processes, clean split of responsibilities:
   else, they will drift.
 - OS banners and audio are the monitor's job, not the hook's.
   The hook never rings.
-- The block lifts once no prompts have been submitted for
-  `idle_threshold_minutes`. A release notification + sound fires
-  at the moment the idle timer crosses (not on the next prompt),
+- The block is held for a full `idle_threshold_minutes` measured
+  from `block_start` (the instant the block fired), NOT from the
+  user's last prompt. Measuring from the last prompt meant a block
+  landing 9 minutes into an idle gap lifted after 1 minute. Blocked
+  prompts never touch `last_prompt.ts`, so nothing the user does in
+  Claude Code can shorten or extend it. A release notification +
+  sound fires at the moment that break is served (not on the next prompt),
   and *only* if the prior tier was `block` — nudge-tier idle
   crossings are silent. The monitor fires this from the main loop
   when it detects the idle transition, so the user hears the "you
@@ -136,9 +140,11 @@ After install, tell the user:
     toward `idle_threshold_minutes`. If they prompt Claude again,
     the statusline snaps back to coding mode, making the reset
     visible.
-- **At the nudge threshold** Claude opens *one* reply with a
-  reminder to take a break (once per tier-epoch, across all open
-  chats), and an OS banner fires. Past the block threshold, new
+- **At the nudge threshold** Claude opens a reply with a reminder
+  to take a break (once per reminder-epoch, across all open chats),
+  and an OS banner fires. The monitor re-arms the reminder every
+  `notify_cooldown_minutes`, so a long nudge-tier streak gets a
+  fresh poem each cooldown instead of one for the entire tier. Past the block threshold, new
   prompts are refused entirely — the user must stop prompting for
   `idle_threshold_minutes` to unblock. Refused prompts do not
   count as activity, so the idle clock keeps running.
@@ -222,9 +228,21 @@ stats/activity.log          — break/nudge event history (shareable)
   in a different terminal tab do NOT count as activity. Background
   `/loop` or agents do nothing on their own — the monitor is
   watching *you* prompting Claude, not the machine.
-- If the monitor dies, `stats/active.txt` goes stale. `hook.sh` ignores
-  tiers older than 180s, so a dead monitor does not permanently lock
-  the user out. Manual escape: `rm stats/active.txt`.
+- Liveness is `data/monitor.heartbeat`, touched every poll. `hook.sh`
+  and `statusline.sh` enforce/display a tier only while that heartbeat
+  is under 180s old, so a dead monitor does not permanently lock the
+  user out. Do NOT age out `stats/active.txt` by its own mtime instead
+  — the monitor writes it only on tier transitions and nudge re-arms,
+  so its mtime is frozen and an hour-old block is still a live block.
+  Keying staleness off it silently disarmed every block three minutes
+  in while the streak kept climbing (observed: 120 -> 136 min).
+  Manual escape: `rm stats/active.txt`.
+- `config.yaml` is re-read whenever its mtime changes; thresholds are
+  live-editable. When a block lifts, `ask_new_numbers` opens a macOS
+  dialog (detached, so it never wedges the poll loop) asking for the
+  next `block_minutes` and `idle_threshold_minutes`, sets
+  `nudge_minutes` to half of `block_minutes`, and writes them back
+  via `set_config_int`.
 - Block across sessions relies on Claude Code reading the same
   `settings.json` hook in every session. Do not register the hook
   per-project — it must be global.

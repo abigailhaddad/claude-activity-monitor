@@ -85,10 +85,13 @@ fi
 # active.txt is empty — it's empty while you're currently idle, but
 # the streak hasn't reset yet, so we need to infer the tier ourselves
 # to keep the statusline consistent with what the hook will actually do.
+# Trust active.txt only while the daemon is alive (state.json freshness,
+# checked above, is that liveness signal). Ageing out active.txt itself
+# would be wrong: the monitor writes it once per tier transition, so its
+# mtime is frozen and an hour-old block is still a live block.
 tier=""
 if [[ -s "$ACTIVE_FILE" ]]; then
-  active_age=$(( now - $(mtime "$ACTIVE_FILE") ))
-  (( active_age < 180 )) && tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
+  tier=$(head -n1 "$ACTIVE_FILE" | sed -n 's/^TIER=//p')
 fi
 if [[ -z "$tier" ]]; then
   if   (( mins >= block_at )); then tier=block

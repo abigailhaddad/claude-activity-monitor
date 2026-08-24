@@ -16,11 +16,12 @@ hard block on new prompts until you step away.
 
 Two tiers, both configurable:
 
-- **Nudge** — Claude opens *one* reply with a reminder to take a
-  break, and an OS banner fires alongside it. The poem injects
-  exactly once per tier-epoch across every open Claude Code session;
-  subsequent prompts in any chat stay quiet until you actually
-  cross a threshold again. You can still work.
+- **Nudge** — Claude opens a reply with a reminder to take a break,
+  and an OS banner fires alongside it. The poem injects once per
+  reminder across every open Claude Code session, and re-arms on the
+  `notify_cooldown_minutes` cadence, so a long streak gets a fresh
+  reminder every cooldown rather than a single one for the whole
+  tier. Prompts in between stay quiet. You can still work.
 - **Block** — Claude Code refuses to send your prompt. In this chat,
   in any other chat, in a brand-new session you just opened to sneak
   around it. The block lifts only after a break of whatever length
@@ -109,26 +110,41 @@ Two processes, clean split of responsibilities:
 
 - `hook.sh` — lives inside Claude Code. Runs on `UserPromptSubmit`
   and `Stop`. Nudge-tier prompts update `data/last_prompt.ts` (the
-  activity signal) and inject the reminder once per tier-epoch,
+  activity signal) and inject the reminder once per reminder-epoch,
   gated by a `data/last_injected.ts` marker so the poem fires in
   exactly one chat per epoch instead of every prompt everywhere.
+  The hook enforces nothing unless `data/monitor.heartbeat` is
+  fresh — that, not the age of `active.txt`, is how it tells a live
+  daemon from a crashed one.
   Block-tier prompts are refused (exit 2 + block message to stderr)
   and deliberately do *not* update `last_prompt.ts` — if they did,
   every rejected attempt would reset the idle countdown and you
   could never unblock.
 - `monitor.sh` — the daemon, outside Claude Code. Polls every 30
   seconds, reads `data/last_prompt.ts`, advances the streak, and
-  writes `stats/active.txt` *only when the tier transitions*. That
-  means the `{mins}` in the poem is frozen at the moment you
-  crossed the threshold — every chat sees the same number instead
-  of each session reading a different value a few seconds apart.
+  writes `stats/active.txt` on tier transitions and on each nudge
+  re-arm. Between those writes the `{mins}` in the poem is frozen,
+  so every chat sees the same number instead of each session
+  reading a different value a few seconds apart. It also touches
+  `data/monitor.heartbeat` every poll, and re-reads `config.yaml`
+  whenever it changes, so threshold edits apply without a restart.
   The monitor is also the sole source of OS banners and audio;
   the hook doesn't ring.
 - When you stop prompting for `idle_threshold_minutes`, the streak
-  resets. If the prior tier was `block`, an "unblocked" banner +
-  release sound fires the moment the idle clock crosses — not on
-  your next prompt — so you hear it while you're still away from
-  the keyboard. Nudge-tier idle crossings are silent.
+  resets. Nudge-tier idle crossings are silent.
+- A **block** is different: it is held for a full
+  `idle_threshold_minutes` measured from the moment the block fired,
+  not from your last prompt. Otherwise a block landing nine minutes
+  after your last prompt would lift after one — a "10-minute break"
+  that isn't. The "unblocked" banner + release sound fires the moment
+  that break is served, not on your next prompt, so you hear it while
+  you're still away from the keyboard.
+- **When a block lifts you get a dialog** asking for the next round's
+  numbers: how long to code before the next hard stop, and how long
+  that break should be. Gentle reminders auto-set to half the hard
+  stop. Cancel or ignore it (it times out after two minutes) and the
+  current values stand. Answers are written straight into
+  `config.yaml` and picked up on the next poll.
 - The block is global across sessions — you can't open a new chat
   to escape it.
 
@@ -204,9 +220,9 @@ rm stats/active.txt
 
 This is also the hand-wave for "I know, I'm taking a break right
 now, reset the clock." The monitor sees the deletion on its next
-poll and sets your streak back to zero. The hook also ignores
-`active.txt` if it's more than 3 minutes stale, so a crashed monitor
-won't leave you permanently blocked.
+poll and sets your streak back to zero. The hook also refuses to
+enforce anything when `data/monitor.heartbeat` is more than 3 minutes
+stale, so a crashed monitor won't leave you permanently blocked.
 
 ## Uninstall
 
