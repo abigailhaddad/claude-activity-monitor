@@ -57,6 +57,8 @@ fi
 
 streak_start=$(jq -r '.streak_start // 0' "$STATE" 2>/dev/null)
 last_event=$(jq -r '.last_event // 0' "$STATE" 2>/dev/null)
+block_start=$(jq -r '.block_start // 0' "$STATE" 2>/dev/null)
+[[ "$block_start" =~ ^[0-9]+$ ]] || block_start=0
 [[ -z "$streak_start" || "$streak_start" == "0" ]] && { printf 'break: 0m'; exit 0; }
 
 now=$(date +%s)
@@ -108,30 +110,42 @@ fi
 #             pauses stay in coding mode so a freshly-reset streak
 #             doesn't immediately flip into "break: 9m left".
 blocked_in=$(( block_at > mins ? block_at - mins : 0 ))
-break_left=$(( idle > idle_min ? idle - idle_min : 0 ))
 
-if (( idle_min > 0 )) && [[ -n "$tier" ]]; then
-  # break_left == 0 is a transient "idle past threshold, monitor is
-  # about to reset the streak" state (<30s window). Label it as done
-  # rather than "0m left" which reads like no progress.
+# Minutes still to serve. A block is held for a full idle_threshold
+# measured from block_start — the instant the block fired — not from the
+# user's last prompt. The countdown has to be measured the same way the
+# monitor releases, or the statusline promises a lift that won't come.
+# block_start is 0 when the tier was inferred from streak math rather
+# than read from a live block; fall back to idle progress there.
+if [[ "$tier" == "block" && "$block_start" != "0" ]]; then
+  served=$(( now - block_start ))
+  (( served < 0 )) && served=0
+  break_left=$(( (idle * 60 - served + 59) / 60 ))
+  (( break_left < 0 )) && break_left=0
+else
+  break_left=$(( idle > idle_min ? idle - idle_min : 0 ))
+fi
+
+if [[ "$tier" == "block" ]]; then
+  # The only state where prompts are actually refused. Say so plainly,
+  # in both coding and idle mode — the countdown runs on block_start
+  # either way, so there is nothing to distinguish.
   if (( break_left == 0 )); then
-    suffix="break · done, resetting"
+    printf 'BLOCKED · lifting now'
   else
-    suffix=$(printf 'break: %dm left' "$break_left")
+    printf 'BLOCKED · %dm left' "$break_left"
   fi
-  if [[ "$tier" == "block" ]]; then
-    printf 'BLOCKED · %s' "$suffix"
+elif (( idle_min > 0 )) && [[ -n "$tier" ]]; then
+  # Nudge tier, idling. NOTHING is enforced here — prompts go through
+  # untouched. This countdown only says when the streak resets itself,
+  # so it must not borrow the block's vocabulary: "break: 9m left" read
+  # as "you are on a mandated break" when it meant "9 more idle minutes
+  # and your streak zeroes out".
+  if (( break_left == 0 )); then
+    printf '%dm coding · streak resetting' "$mins"
   else
-    printf '%s' "$suffix"
+    printf '%dm coding · resets in %dm idle' "$mins" "$break_left"
   fi
 else
-  if [[ "$tier" == "block" ]]; then
-    if (( break_left == 0 )); then
-      printf 'BLOCKED · break · done, resetting'
-    else
-      printf 'BLOCKED · break: %dm left' "$break_left"
-    fi
-  else
-    printf '%dm since break · blocked in %dm' "$mins" "$blocked_in"
-  fi
+  printf '%dm since break · blocked in %dm' "$mins" "$blocked_in"
 fi

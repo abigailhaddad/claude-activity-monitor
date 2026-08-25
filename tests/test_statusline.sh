@@ -54,18 +54,22 @@ assert_contains "$out" "stopped" "stale state.json: monitor-stopped marker"
 # write_state sets last_event = streak_start, but for most tests we want
 # an independent last_event close to now so idle_min = 0 (coding mode).
 write_state_coding() {
-  local mins_ago=$1
+  local mins_ago=$1 block_ago=${2:-0}
   local ts=$(( now - mins_ago * 60 ))
-  printf '{"last_event":%d,"streak_start":%d,"last_notified":0,"last_release":0}\n' \
-    "$now" "$ts" > "$TMP/data/state.json"
+  local bs=0
+  (( block_ago > 0 )) && bs=$(( now - block_ago * 60 ))
+  printf '{"last_event":%d,"streak_start":%d,"last_notified":0,"last_release":0,"block_start":%d}\n' \
+    "$now" "$ts" "$bs" > "$TMP/data/state.json"
 }
 # On-break helper: last_event is Nm ago (so idle_min = Nm), streak older.
 write_state_break() {
-  local streak_mins=$1 idle_mins=$2
+  local streak_mins=$1 idle_mins=$2 block_ago=${3:-0}
   local s_ts=$(( now - streak_mins * 60 ))
   local e_ts=$(( now - idle_mins * 60 ))
-  printf '{"last_event":%d,"streak_start":%d,"last_notified":0,"last_release":0}\n' \
-    "$e_ts" "$s_ts" > "$TMP/data/state.json"
+  local bs=0
+  (( block_ago > 0 )) && bs=$(( now - block_ago * 60 ))
+  printf '{"last_event":%d,"streak_start":%d,"last_notified":0,"last_release":0,"block_start":%d}\n' \
+    "$e_ts" "$s_ts" "$bs" > "$TMP/data/state.json"
 }
 
 # Fresh start (streak_start=0 → "break: 0m" early return).
@@ -93,18 +97,29 @@ assert_contains "$out" "blocked in 55m" "coding+nudge: block countdown"
 # Block tier + coding mode: "BLOCKED · break: Xm left" — the idle
 # countdown is shown even mid-coding so the user sees how long the
 # block has left without switching modes.
-write_state_coding 130
+write_state_coding 130 3   # block fired 3m ago
 write_nudge block
 out=$(run_sl)
 assert_contains "$out" "BLOCKED" "coding+block: BLOCKED label"
-assert_contains "$out" "break:" "coding+block: idle countdown shown"
+assert_contains "$out" "7m left" "coding+block: countdown runs on block_start, not last prompt"
 
 # Break mode only activates when a tier is active. 65m streak + nudge
 # tier + 3m idle → "break: 7m left" (counting down toward nudge clear).
 write_state_break 65 3   # 65m streak, 3m idle
 write_nudge nudge
 out=$(run_sl)
-assert_contains "$out" "break: 7m left" "break mode at nudge tier: countdown remaining"
+assert_contains "$out" "resets in 7m" "nudge tier idle: shows streak-reset countdown"
+# The nudge tier enforces nothing. Its countdown must not borrow the
+# block's vocabulary — "break: 9m left" read as a mandated break when it
+# only meant "9 more idle minutes until the streak zeroes out".
+[[ "$out" == *"BLOCKED"* || "$out" == *"break:"* ]] && {
+  FAIL=$((FAIL + 1))
+  FAILED_TESTS+=("nudge tier idle: uses enforced-break wording")
+  echo "  ✗ nudge tier idle: uses enforced-break wording ($out)"
+} || {
+  PASS=$((PASS + 1))
+  echo "  ✓ nudge tier idle: no enforced-break wording"
+}
 
 # Pre-nudge idle stays in coding mode (no tier → no break countdown).
 # A freshly-reset streak must not flip into "break: 9m left" the moment
@@ -124,11 +139,23 @@ assert_contains "$out" "since break" "pre-nudge idle: stays in coding mode"
 }
 
 # Break mode + block tier: "BLOCKED · break: Xm left".
-write_state_break 130 4  # 130m streak, 4m idle
+# REGRESSION: the monitor holds a block for a full idle_threshold from
+# block_start, so the countdown must too. Here the user's last prompt was
+# 9m ago but the block only fired 2m ago — measuring from the prompt would
+# claim "1m left" when the block actually has 8 minutes to run.
+write_state_break 130 9 2   # 130m streak, 9m idle, block fired 2m ago
 write_nudge block
 out=$(run_sl)
 assert_contains "$out" "BLOCKED" "break+block: BLOCKED label"
-assert_contains "$out" "break: 6m left" "break+block: countdown remaining"
+assert_contains "$out" "8m left" "break+block: countdown from block_start not last prompt"
+[[ "$out" == *"1m left"* ]] && {
+  FAIL=$((FAIL + 1))
+  FAILED_TESTS+=("break+block: countdown measured from last prompt")
+  echo "  ✗ break+block: countdown measured from last prompt (block would lift early)"
+} || {
+  PASS=$((PASS + 1))
+  echo "  ✓ break+block: does not measure the break from the last prompt"
+}
 
 # Idle past threshold but monitor hasn't reset yet (transient):
 # should show "done, resetting" not "0m left". Needs an active tier
@@ -136,7 +163,7 @@ assert_contains "$out" "break: 6m left" "break+block: countdown remaining"
 write_state_break 65 15  # 65m streak, 15m idle (capped to 10m)
 write_nudge nudge
 out=$(run_sl)
-assert_contains "$out" "done, resetting" "break past threshold: done-marker not 0m"
+assert_contains "$out" "streak resetting" "idle past threshold: done-marker not 0m"
 
 # Reset feedback: typing (last_event = now) flips back to coding mode.
 write_state_coding 30

@@ -135,7 +135,8 @@ After install, tell the user:
   Code session will enforce it automatically.
 - **The statusline** shows two modes:
   - Coding (just prompted): `Nm since break · blocked in Xm`, or
-    `BLOCKED · take a break` past the block threshold.
+    `BLOCKED · Xm left` past the block threshold, where X counts down
+    from `block_start` — the same clock the monitor releases on.
   - Break (no prompts for a while): `break: Xm left` — a countdown
     toward `idle_threshold_minutes`. If they prompt Claude again,
     the statusline snaps back to coding mode, making the reset

@@ -145,6 +145,11 @@ Two processes, clean split of responsibilities:
   stop. Cancel or ignore it (it times out after two minutes) and the
   current values stand. Answers are written straight into
   `config.yaml` and picked up on the next poll.
+- The statusline distinguishes enforced from informational. Only
+  `BLOCKED · Xm left` means prompts are being refused; at nudge tier an
+  idle pause reads `62m coding · resets in 9m idle`, which is just when
+  the streak zeroes itself out. Nothing is enforced between the nudge
+  and block thresholds.
 - The block is global across sessions — you can't open a new chat
   to escape it.
 
