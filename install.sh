@@ -68,7 +68,7 @@ if [[ -t 0 ]]; then
 
   if (( want_audio_on == 0 )); then
     tmp=$(mktemp)
-    sed -E 's|^(nudge_audio_file|block_audio_file|release_audio_file):.*|\1: ""|' \
+    sed -E 's#^(nudge_audio_file|block_audio_file|release_audio_file):.*#\1: ""#' \
       "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
   else
     # Restore the shipped defaults if the user previously turned audio
